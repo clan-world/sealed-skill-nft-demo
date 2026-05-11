@@ -110,7 +110,7 @@ export function App() {
           callerPublicKey: walletBPubkey, prompt: 'what sound does this animal make?', epoch: artifact.epoch, nonce: makeNonce('web-b-fail')
         };
         const signatureB64 = signWithKeypair(walletB, message);
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8787'}/api/access/run`, {
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/api/access/run`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callerPublicKey: walletBPubkey, prompt: message.prompt, message, signatureB64 })
         });
         const json = await res.json();

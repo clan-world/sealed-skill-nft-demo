@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8787';
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const init: RequestInit = body
