@@ -1,0 +1,16 @@
+node_modules
+.pnpm-store
+dist
+build
+.run
+.env
+.env.*
+!.env.example
+data
+.DS_Store
+*.log
+target
+.anchor
+*.zip
+infra/aws/terraform/.terraform
+infra/aws/terraform/*.tfstate*

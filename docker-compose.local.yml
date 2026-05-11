@@ -1,0 +1,68 @@
+services:
+  tee-broker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dev
+    command: pnpm --filter @sealed-skill/tee-broker dev
+    environment:
+      DEMO_DATA_DIR: /app/data
+      TEE_BROKER_PORT: 4101
+    ports: ["4101:4101"]
+    volumes: ["demo-data:/app/data"]
+
+  tee-creator:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dev
+    command: pnpm --filter @sealed-skill/tee-creator dev
+    environment:
+      DEMO_DATA_DIR: /app/data
+      TEE_CREATOR_PORT: 4102
+    ports: ["4102:4102"]
+    volumes: ["demo-data:/app/data"]
+    depends_on: [tee-broker]
+
+  tee-runtime:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dev
+    command: pnpm --filter @sealed-skill/tee-runtime dev
+    environment:
+      DEMO_DATA_DIR: /app/data
+      TEE_RUNTIME_PORT: 4103
+      TEE_BROKER_URL: http://tee-broker:4101
+    ports: ["4103:4103"]
+    volumes: ["demo-data:/app/data"]
+    depends_on: [tee-broker]
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dev
+    command: pnpm --filter @sealed-skill/api dev
+    environment:
+      DEMO_DATA_DIR: /app/data
+      API_PORT: 8787
+      SOLANA_ENABLED: ${SOLANA_ENABLED:-false}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      BACKEND_KEYPAIR_PATH: /app/data/solana/backend-keypair.json
+      TEE_BROKER_URL: http://tee-broker:4101
+      TEE_CREATOR_URL: http://tee-creator:4102
+      TEE_RUNTIME_URL: http://tee-runtime:4103
+    ports: ["8787:8787"]
+    volumes: ["demo-data:/app/data"]
+    depends_on: [tee-broker, tee-creator, tee-runtime]
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dev
+    command: pnpm --filter @sealed-skill/web-demo dev
+    environment:
+      VITE_API_BASE_URL: http://localhost:8787
+      VITE_SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+    ports: ["5173:5173"]
+    depends_on: [api]
+
+volumes:
+  demo-data:

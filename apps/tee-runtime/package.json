@@ -1,0 +1,25 @@
+{
+  "name": "@sealed-skill/tee-runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@sealed-skill/crypto": "workspace:*",
+    "@sealed-skill/policies": "workspace:*",
+    "@sealed-skill/protocol": "workspace:*",
+    "@sealed-skill/storage": "workspace:*",
+    "@sealed-skill/tee-common": "workspace:*",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

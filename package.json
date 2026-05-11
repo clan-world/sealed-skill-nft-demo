@@ -1,0 +1,25 @@
+{
+  "name": "sealed-skill-nft-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.1",
+  "scripts": {
+    "dev:services": "concurrently -n api,broker,creator,runtime -c blue,magenta,green,cyan \"corepack pnpm --filter @sealed-skill/api dev\" \"corepack pnpm --filter @sealed-skill/tee-broker dev\" \"corepack pnpm --filter @sealed-skill/tee-creator dev\" \"corepack pnpm --filter @sealed-skill/tee-runtime dev\"",
+    "dev:web": "corepack pnpm --filter @sealed-skill/web-demo dev",
+    "dev": "concurrently -n services,web -c yellow,white \"corepack pnpm dev:services\" \"corepack pnpm dev:web\"",
+    "build": "corepack pnpm -r build",
+    "typecheck": "corepack pnpm -r typecheck",
+    "test": "tsx scripts/critical-tests.ts",
+    "clean": "node scripts/clean.mjs",
+    "zip": "node scripts/create-zip.mjs",
+    "self-check": "node scripts/self-check.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "concurrently": "^9.2.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

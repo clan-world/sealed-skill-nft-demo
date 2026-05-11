@@ -1,0 +1,45 @@
+# Sealed Skill NFT Demo
+
+A minimal monorepo demo for a **Solana NFT that controls a secret born inside a TEE-like service**.
+
+The demo shows this story:
+
+1. A Creator TEE generates a private animal artifact.
+2. The artifact is encrypted and stored outside the chain.
+3. A Solana devnet demo NFT is minted to Wallet A.
+4. Wallet B cannot use the secret before transfer.
+5. Wallet A prepares and completes a transfer to Wallet B.
+6. Wallet B can ask the Runtime TEE, “What sound does this animal make?”
+7. The secret animal is never shown to either wallet.
+
+This repo uses **mock attestation** for the MVP, but the code is shaped so Automata DCAP or zkVM-compressed attestation can replace it later.
+
+## Start here
+
+- [Run book](docs/RUNBOOK.md) — local demo, devnet setup, AWS deploy, teardown.
+- [Architecture](docs/ARCHITECTURE.md) — system diagrams and data flow.
+- [Threat model](docs/THREAT_MODEL.md) — what this protects and what it does not.
+- [Roadmap](docs/ROADMAP.md) — future real TEE, Automata, transfer hooks, marketplace support.
+- [Sources and references](docs/SOURCES.md) — docs and standards used while designing the repo.
+
+## What is real in this MVP?
+
+Real:
+
+- Symmetric encryption for the private artifact.
+- Key wrapping between TEE-like services.
+- Signed transcripts for creator, broker, and runtime actions.
+- Solana devnet minting and transfer flow for a 1-supply demo NFT token.
+- UI step-by-step visualization of TEE processing.
+- Local and AWS deployment helpers.
+
+Mocked for MVP:
+
+- TEE hardware attestation.
+- On-chain DCAP verification.
+- Production NFT transfer hooks.
+- Real LLM inference inside an enclave.
+
+## One sentence
+
+The NFT does not contain the secret. It controls who can ask an approved runtime to use the secret inside a protected environment.
