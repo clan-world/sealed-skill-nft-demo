@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { VisualStep } from './steps.js';
 import { shortHash } from '@sealed-skill/protocol';
 
-export function TeePanel(props: { title: string; subtitle: string; steps: VisualStep[]; accent: string; publicKey?: string | undefined; measurement?: string | undefined; children?: ReactNode; stepTones?: Record<number, 'broker' | 'runtime' | 'creator'> }) {
+export function TeePanel(props: { title: string; subtitle: string; steps: VisualStep[]; accent: string; chipLabel: string; publicKey?: string | undefined; measurement?: string | undefined; children?: ReactNode; stepTones?: Record<number, 'broker' | 'runtime' | 'creator'> }) {
   return (
     <section className="tee-panel" style={{ borderColor: props.accent }}>
       <div className="tee-heading">
@@ -10,7 +10,7 @@ export function TeePanel(props: { title: string; subtitle: string; steps: Visual
           <h3>{props.title}</h3>
           <p>{props.subtitle}</p>
         </div>
-        <div className="tee-chip" style={{ background: props.accent }}>TEE</div>
+        <div className="tee-chip" style={{ background: props.accent }}>{props.chipLabel}</div>
       </div>
       <div className="tee-meta">
         <span>key {props.publicKey ? shortHash(props.publicKey.replace(/\s+/g, ''), 14) : 'not registered'}</span>

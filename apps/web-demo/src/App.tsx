@@ -348,7 +348,7 @@ export function App() {
       </section>
 
       <section className="tee-grid">
-        <TeePanel title="TEE1 Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
+        <TeePanel title="NFT Transfer Key Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
           <div className="tee-panel-actions recipient-transfer-row">
             <input
               aria-label="Transfer recipient wallet"
@@ -363,14 +363,14 @@ export function App() {
             )}
           </div>
         </TeePanel>
-        <TeePanel title="TEE2 Creator" subtitle="Generates and encrypts the scarce artifact" accent="#13b981" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 3: 'creator', 4: 'creator', 5: 'creator', 6: 'creator', 7: 'broker' }}>
+        <TeePanel title="Scarce Artifact Creator" subtitle="Generates and encrypts a random animal, scarce artifact" accent="#13b981" chipLabel="TEE2" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 3: 'creator', 4: 'creator', 5: 'creator', 6: 'creator', 7: 'broker' }}>
           {canMint && (
             <div className="tee-panel-actions">
               <button onClick={() => setMintModalOpen(true)} disabled={busy !== 'none'}>Mint NFT</button>
             </div>
           )}
         </TeePanel>
-        <TeePanel title="TEE3 Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} stepTones={{ 1: 'broker', 3: 'broker', 4: 'creator' }} />
+        <TeePanel title="Approved Execution Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" chipLabel="TEE3" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} stepTones={{ 1: 'broker', 3: 'broker', 4: 'creator' }} />
       </section>
 
       {mintModalOpen && (
