@@ -1,5 +1,6 @@
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: '../../.env' });
+import path from 'node:path';
 import express from 'express';
 import cors from 'cors';
 import nacl from 'tweetnacl';
@@ -18,6 +19,7 @@ const backendKeypairPath = process.env.BACKEND_KEYPAIR_PATH ?? `${dataDir}/solan
 const collectionStatePath = process.env.COLLECTION_STATE_PATH ?? `${dataDir}/solana/token-2022-collection.json`;
 const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? process.env.VITE_PUBLIC_BASE_URL ?? 'https://nft.clan-world.com').replace(/\/+$/, '');
 const sealedSkillProgramId = getSealedSkillProgramId(process.env.SEALED_SKILL_PROGRAM_ID);
+const vellumEmblemPath = path.resolve(process.cwd(), '../../Vellum_Emblem.png');
 const teeBrokerUrl = process.env.TEE_BROKER_URL ?? 'http://localhost:4101';
 const teeCreatorUrl = process.env.TEE_CREATOR_URL ?? 'http://localhost:4102';
 const teeRuntimeUrl = process.env.TEE_RUNTIME_URL ?? 'http://localhost:4103';
@@ -73,12 +75,16 @@ app.get('/api/nft/collection-metadata', (_req, res) => {
     name: 'Sealed Skill Collection',
     symbol: 'SSKILL',
     description: 'Demo collection for TEE-gated sealed skill NFTs on Solana devnet.',
-    image: `${publicBaseUrl}/api/nft/collection-image.svg`
+    image: `${publicBaseUrl}/api/nft/vellum-emblem.png`
   });
 });
 
 app.get('/api/nft/collection-image.svg', (_req, res) => {
-  res.type('image/svg+xml').send(renderNftSvg('Sealed Skill', 'TEE-gated NFT collection', '#13b981'));
+  res.redirect(302, '/api/nft/vellum-emblem.png');
+});
+
+app.get('/api/nft/vellum-emblem.png', (_req, res) => {
+  res.type('png').sendFile(vellumEmblemPath);
 });
 
 app.get('/api/nft/metadata/:mint', async (req, res, next) => {
@@ -94,7 +100,7 @@ app.get('/api/nft/metadata/:mint', async (req, res, next) => {
       name: `Sealed Skill #${artifact.artifactId.slice(0, 8)}`,
       symbol: 'SSNFT',
       description: 'A Token-2022 collectible NFT that gates a sealed TEE artifact. The animal stays hidden; approved runtime calls can use it.',
-      image: `${publicBaseUrl}/api/nft/image/${mint}.svg`,
+      image: `${publicBaseUrl}/api/nft/image/${mint}.png`,
       external_url: publicBaseUrl,
       attributes: [
         { trait_type: 'Artifact status', value: artifact.status },
@@ -115,13 +121,17 @@ app.get('/api/nft/metadata/:mint', async (req, res, next) => {
 });
 
 app.get('/api/nft/image/:mint.svg', async (req, res, next) => {
+  res.redirect(302, `/api/nft/image/${req.params.mint}.png`);
+});
+
+app.get('/api/nft/image/:mint.png', async (req, res, next) => {
   try {
     const state = await store.read();
     if (state.artifact?.nftMint !== req.params.mint) {
       res.status(404).send('not found');
       return;
     }
-    res.type('image/svg+xml').send(renderNftSvg('Sealed Skill NFT', `epoch ${state.artifact.epoch}`, '#9b5cff'));
+    res.type('png').sendFile(vellumEmblemPath);
   } catch (error) {
     next(error);
   }
@@ -442,21 +452,6 @@ app.post('/api/ownership/check', async (req, res, next) => {
 app.post('/api/tamper/wrong-owner', async (_req, res) => {
   res.json({ ok: false, reason: 'This endpoint is a UI hook for the tamper demo. Connect a non-owner wallet before transfer.' });
 });
-
-function renderNftSvg(title: string, subtitle: string, accent: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
-  <rect width="1200" height="1200" fill="#070a12"/>
-  <rect x="80" y="80" width="1040" height="1040" rx="52" fill="#10172a" stroke="${accent}" stroke-width="8"/>
-  <circle cx="600" cy="480" r="190" fill="${accent}" opacity="0.18"/>
-  <path d="M450 500c0-83 67-150 150-150s150 67 150 150v120h46c24 0 44 20 44 44v178c0 24-20 44-44 44H404c-24 0-44-20-44-44V664c0-24 20-44 44-44h46V500zm74 120h152V500c0-42-34-76-76-76s-76 34-76 76v120z" fill="${accent}"/>
-  <text x="600" y="930" text-anchor="middle" fill="#eef2ff" font-family="Inter,Arial,sans-serif" font-size="62" font-weight="800">${escapeXml(title)}</text>
-  <text x="600" y="1005" text-anchor="middle" fill="#b9c1d9" font-family="Inter,Arial,sans-serif" font-size="34">${escapeXml(subtitle)}</text>
-</svg>`;
-}
-
-function escapeXml(value: string): string {
-  return value.replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[char] ?? char);
-}
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);
