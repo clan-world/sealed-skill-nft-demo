@@ -85,7 +85,7 @@ Set this in `.env`:
 SOLANA_ENABLED=true
 SOLANA_CLUSTER=devnet
 SOLANA_RPC_URL=https://api.devnet.solana.com
-BACKEND_KEYPAIR_PATH=./data/solana/backend-keypair.json
+BACKEND_KEYPAIR_PATH=../../data/solana/backend-keypair.json
 ```
 
 Create a backend keypair:
