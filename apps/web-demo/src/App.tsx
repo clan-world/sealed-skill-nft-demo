@@ -8,7 +8,7 @@ import { api } from './api.js';
 import { InfoCard, StatusPill, TeePanel } from './components.js';
 import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, type VisualStep } from './steps.js';
 
-type Busy = 'none' | 'register' | 'generate' | 'b-fail' | 'prepare' | 'transfer' | 'b-run';
+type Busy = 'none' | 'reset' | 'register' | 'generate' | 'b-fail' | 'prepare' | 'transfer' | 'b-run';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -86,6 +86,17 @@ export function App() {
       const next = await api<DemoState>('/api/tees/register', {});
       setState(next);
       setSuccess('Three mock-attested TEEs registered.');
+    });
+  }
+
+  async function resetDemo() {
+    await runAction('reset', async () => {
+      const next = await api<DemoState>('/api/demo/reset', {});
+      setState(next);
+      setCreatorSteps(makeSteps(creatorStepLabels));
+      setBrokerSteps(makeSteps(brokerStepLabels));
+      setRuntimeSteps(makeSteps(runtimeStepLabels));
+      setSuccess('Demo reset.');
     });
   }
 
@@ -197,6 +208,7 @@ export function App() {
       </section>
 
       <section className="actions">
+        <button onClick={resetDemo} disabled={busy !== 'none'}>Reset demo</button>
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
         <button onClick={generateArtifact} disabled={busy !== 'none' || !walletAPubkey}>2. Generate sealed animal artifact</button>
         <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact}>3. Wallet B tries before transfer</button>
