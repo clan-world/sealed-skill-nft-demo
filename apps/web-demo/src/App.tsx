@@ -220,7 +220,7 @@ export function App() {
       </section>
 
       <section className="actions">
-        <button onClick={resetDemo} disabled={busy !== 'none'}>Reset demo</button>
+        <button className="reset-button" onClick={resetDemo} disabled={busy !== 'none'}>Reset demo</button>
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
         <button onClick={generateArtifact} disabled={busy !== 'none' || !walletAPubkey}>2. Generate sealed animal artifact</button>
         <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact}>3. Confirm Wallet B is blocked</button>
@@ -241,18 +241,20 @@ export function App() {
         <TeePanel title="TEE3 Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} />
       </section>
 
-      <section className="transcripts">
-        <h2>Signed transcript hashes</h2>
-        <div className="wallet-grid">
-          <InfoCard label="Creation transcript" value={state.creationTranscript?.payloadHash} href={solscanSearchUrl(state.creationTranscript?.payloadHash)} />
-          <InfoCard label="Transfer transcript" value={state.transferTranscript?.payloadHash} href={solscanSearchUrl(state.transferTranscript?.payloadHash)} />
-          <InfoCard label="Runtime transcript" value={state.lastRuntimeResult?.transcript.payloadHash} href={solscanSearchUrl(state.lastRuntimeResult?.transcript.payloadHash)} />
+      <section className="audit-grid">
+        <div className="transcripts">
+          <h2>Signed transcript hashes</h2>
+          <div className="transcript-stack">
+            <InfoCard label="Creation transcript" value={state.creationTranscript?.payloadHash} href={solscanSearchUrl(state.creationTranscript?.payloadHash)} />
+            <InfoCard label="Transfer transcript" value={state.transferTranscript?.payloadHash} href={solscanSearchUrl(state.transferTranscript?.payloadHash)} />
+            <InfoCard label="Runtime transcript" value={state.lastRuntimeResult?.transcript.payloadHash} href={solscanSearchUrl(state.lastRuntimeResult?.transcript.payloadHash)} />
+          </div>
         </div>
-      </section>
 
-      <section className="log">
-        <h2>Event log</h2>
-        <pre>{state.log?.join('\n') || 'No events yet.'}</pre>
+        <div className="log">
+          <h2>Event log</h2>
+          <pre>{state.log?.join('\n') || 'No events yet.'}</pre>
+        </div>
       </section>
     </main>
   );
