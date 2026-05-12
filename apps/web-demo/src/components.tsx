@@ -27,11 +27,16 @@ export function TeePanel(props: { title: string; subtitle: string; steps: Visual
   );
 }
 
-export function InfoCard(props: { label: string; value?: string | undefined; hidden?: boolean | undefined }) {
+export function InfoCard(props: { label: string; value?: string | undefined; hidden?: boolean | undefined; href?: string | undefined }) {
+  const value = props.hidden ? 'hidden' : props.value || 'not yet';
+  const content = props.href && props.value
+    ? <a href={props.href} target="_blank" rel="noreferrer">{value}</a>
+    : value;
+
   return (
     <div className="info-card">
       <span>{props.label}</span>
-      <strong>{props.hidden ? 'hidden' : props.value || 'not yet'}</strong>
+      <strong>{content}</strong>
     </div>
   );
 }

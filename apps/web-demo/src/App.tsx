@@ -45,6 +45,10 @@ function signWithKeypair(kp: Keypair, message: unknown): string {
   return bytesToBase64(nacl.sign.detached(bytes, kp.secretKey));
 }
 
+function solscanSearchUrl(value?: string): string | undefined {
+  return value ? `https://solscan.io/search?q=${encodeURIComponent(value)}&cluster=devnet` : undefined;
+}
+
 export function App() {
   const wallet = useWallet();
   const { connection } = useConnection();
@@ -240,9 +244,9 @@ export function App() {
       <section className="transcripts">
         <h2>Signed transcript hashes</h2>
         <div className="wallet-grid">
-          <InfoCard label="Creation transcript" value={state.creationTranscript?.payloadHash ? shortHash(state.creationTranscript.payloadHash, 18) : undefined} />
-          <InfoCard label="Transfer transcript" value={state.transferTranscript?.payloadHash ? shortHash(state.transferTranscript.payloadHash, 18) : undefined} />
-          <InfoCard label="Runtime transcript" value={state.lastRuntimeResult?.transcript.payloadHash ? shortHash(state.lastRuntimeResult.transcript.payloadHash, 18) : undefined} />
+          <InfoCard label="Creation transcript" value={state.creationTranscript?.payloadHash} href={solscanSearchUrl(state.creationTranscript?.payloadHash)} />
+          <InfoCard label="Transfer transcript" value={state.transferTranscript?.payloadHash} href={solscanSearchUrl(state.transferTranscript?.payloadHash)} />
+          <InfoCard label="Runtime transcript" value={state.lastRuntimeResult?.transcript.payloadHash} href={solscanSearchUrl(state.lastRuntimeResult?.transcript.payloadHash)} />
         </div>
       </section>
 

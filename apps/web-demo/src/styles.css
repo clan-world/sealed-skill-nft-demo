@@ -16,6 +16,8 @@ main { max-width: 1440px; margin: 0 auto; padding: 28px; }
 .info-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 14px; min-height: 82px; }
 .info-card span { display: block; color: #95a0bb; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
 .info-card strong { display: block; word-break: break-all; font-size: 14px; color: #f8fafc; }
+.info-card a { color: #93c5fd; text-decoration: underline; text-underline-offset: 3px; }
+.info-card a:hover { color: #bfdbfe; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 button { background: #3346ff; color: white; border: 0; border-radius: 12px; padding: 12px 14px; font-weight: 800; cursor: pointer; box-shadow: 0 8px 30px rgba(51,70,255,0.28); }
 button:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
