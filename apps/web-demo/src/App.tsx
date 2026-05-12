@@ -59,6 +59,7 @@ export function App() {
   const [creatorSteps, setCreatorSteps] = useState(makeSteps(creatorStepLabels));
   const [brokerSteps, setBrokerSteps] = useState(makeSteps(brokerStepLabels));
   const [runtimeSteps, setRuntimeSteps] = useState(makeSteps(runtimeStepLabels));
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [walletB] = useState(() => Keypair.generate());
 
   const walletAPubkey = wallet.publicKey?.toBase58();
@@ -177,6 +178,11 @@ export function App() {
     });
   }
 
+  async function confirmTransferFromModal() {
+    setTransferModalOpen(false);
+    await completeTransfer();
+  }
+
   async function walletBRunAfterTransfer() {
     await runAction('b-run', async () => {
       await animate(runtimeStepLabels, setRuntimeSteps, async () => {
@@ -196,6 +202,26 @@ export function App() {
 
   const artifactHash = state.artifact?.encryptedBlob.sha256;
   const sealedKeyHash = state.artifact?.sealedKeyForBroker?.aadHash;
+  const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && walletAPubkey);
+  const transferReview = {
+    solanaFunction: 'SPL Token transferChecked',
+    nftMint: state.artifact?.nftMint,
+    fromOwner: walletAPubkey,
+    toOwner: state.pendingTransferTo ?? walletBPubkey,
+    currentEpoch: state.artifact?.epoch,
+    teeAuthorization: {
+      kind: state.transferTranscript?.payload.kind,
+      artifactId: state.transferTranscript?.payload.artifactId,
+      nftMint: state.transferTranscript?.payload.nftMint,
+      fromOwner: state.transferTranscript?.payload.fromOwner,
+      toOwner: state.transferTranscript?.payload.toOwner,
+      epoch: state.transferTranscript?.payload.epoch,
+      nextEpoch: state.transferTranscript?.payload.nextEpoch,
+      expiresAt: state.transferTranscript?.payload.expiresAt,
+      payloadHash: state.transferTranscript?.payloadHash,
+      brokerSigner: state.transferTranscript?.signerPublicKeyPem
+    }
+  };
 
   return (
     <main>
@@ -225,7 +251,7 @@ export function App() {
         <button onClick={generateArtifact} disabled={busy !== 'none' || !walletAPubkey}>2. Generate sealed animal artifact</button>
         <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact}>3. Confirm Wallet B is blocked</button>
         <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact || !walletAPubkey}>4. Prepare transfer A → B</button>
-        <button onClick={completeTransfer} disabled={busy !== 'none' || !state.transferTranscript}>5. Complete transfer on Solana</button>
+        <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none' || !canTransfer}>5. Review NFT transfer</button>
         <button onClick={walletBRunAfterTransfer} disabled={busy !== 'none' || state.currentOwner !== walletBPubkey}>6. Wallet B asks runtime</button>
       </section>
 
@@ -236,10 +262,35 @@ export function App() {
       </section>
 
       <section className="tee-grid">
-        <TeePanel title="TEE1 Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} />
+        <TeePanel title="TEE1 Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement}>
+          {canTransfer && (
+            <div className="tee-panel-actions">
+              <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none'}>Transfer NFT</button>
+            </div>
+          )}
+        </TeePanel>
         <TeePanel title="TEE2 Creator" subtitle="Generates and encrypts the scarce artifact" accent="#13b981" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} />
         <TeePanel title="TEE3 Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} />
       </section>
+
+      {transferModalOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setTransferModalOpen(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="transfer-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Broker TEE authorization</p>
+                <h2 id="transfer-modal-title">Transfer NFT</h2>
+              </div>
+              <button className="icon-button" onClick={() => setTransferModalOpen(false)} aria-label="Close transfer review">x</button>
+            </div>
+            <pre className="modal-data">{JSON.stringify(transferReview, null, 2)}</pre>
+            <div className="modal-actions">
+              <button className="reset-button" onClick={() => setTransferModalOpen(false)} disabled={busy !== 'none'}>Cancel</button>
+              <button onClick={confirmTransferFromModal} disabled={busy !== 'none' || !canTransfer}>Transfer</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <section className="audit-grid">
         <div className="transcripts">

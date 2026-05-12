@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react';
 import type { VisualStep } from './steps.js';
 import { shortHash } from '@sealed-skill/protocol';
 
-export function TeePanel(props: { title: string; subtitle: string; steps: VisualStep[]; accent: string; publicKey?: string | undefined; measurement?: string | undefined }) {
+export function TeePanel(props: { title: string; subtitle: string; steps: VisualStep[]; accent: string; publicKey?: string | undefined; measurement?: string | undefined; children?: ReactNode }) {
   return (
     <section className="tee-panel" style={{ borderColor: props.accent }}>
       <div className="tee-heading">
@@ -23,6 +24,7 @@ export function TeePanel(props: { title: string; subtitle: string; steps: Visual
           </li>
         ))}
       </ol>
+      {props.children}
     </section>
   );
 }
