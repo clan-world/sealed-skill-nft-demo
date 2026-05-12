@@ -19,10 +19,10 @@ export const creatorStepLabels = [
 
 export const brokerStepLabels = [
   'Receive transfer request',
-  'Check current owner is Wallet A',
+  'Check connected wallet is current owner',
   'Unwrap artifact key inside Broker TEE',
   'Create owner-bound transfer capsule',
-  'Bind capsule to Wallet B and epoch',
+  'Bind capsule to recipient wallet and epoch',
   'Sign transfer transcript',
   'Return capsule to Solana transfer flow'
 ];

@@ -6,10 +6,10 @@ The demo shows this story:
 
 1. A Creator TEE generates a private animal artifact.
 2. The artifact is encrypted and stored outside the chain.
-3. A Solana devnet demo NFT is minted to Wallet A.
-4. Wallet B cannot use the secret before transfer.
-5. Wallet A prepares and completes a transfer to Wallet B.
-6. Wallet B can ask the Runtime TEE, “What sound does this animal make?”
+3. A Solana devnet demo NFT is minted to the connected owner wallet.
+4. A different connected wallet cannot use the secret before transfer.
+5. The owner prepares and completes a broker-authorized transfer to a typed recipient wallet.
+6. The new owner can ask the Runtime TEE, “What sound does this animal make?”
 7. The secret animal is never shown to either wallet.
 
 This repo uses **mock attestation** for the MVP, but the code is shaped so Automata DCAP or zkVM-compressed attestation can replace it later.
@@ -32,12 +32,14 @@ Real:
 - Solana devnet minting and transfer flow for a 1-supply demo NFT token.
 - UI step-by-step visualization of TEE processing.
 - Local and AWS deployment helpers.
+- Runtime access checks against the currently connected wallet signature.
 
 Mocked for MVP:
 
 - TEE hardware attestation.
 - On-chain DCAP verification.
 - Production NFT transfer hooks.
+- Blocking normal wallet transfers that bypass the broker.
 - Real LLM inference inside an enclave.
 
 ## One sentence

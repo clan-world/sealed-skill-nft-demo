@@ -152,7 +152,7 @@ app.post('/api/artifacts/mint', async (_req, res, next) => {
       ...s,
       artifact: mintedArtifact,
       currentOwner: artifact.ownerPublicKey,
-      log: [`${new Date().toISOString()} NFT minted to Wallet A: ${nftMint}`, ...s.log]
+      log: [`${new Date().toISOString()} NFT minted to ${artifact.ownerPublicKey}: ${nftMint}`, ...s.log]
     }));
 
     res.json({ state: nextState, nftMint, mintSignature });
@@ -342,7 +342,7 @@ app.post('/api/ownership/check', async (req, res, next) => {
 });
 
 app.post('/api/tamper/wrong-owner', async (_req, res) => {
-  res.json({ ok: false, reason: 'This endpoint is a UI hook for the tamper demo. Use Wallet B before transfer.' });
+  res.json({ ok: false, reason: 'This endpoint is a UI hook for the tamper demo. Connect a non-owner wallet before transfer.' });
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

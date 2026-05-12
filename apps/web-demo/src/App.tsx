@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { Keypair, Transaction } from '@solana/web3.js';
-import nacl from 'tweetnacl';
+import { PublicKey, Transaction } from '@solana/web3.js';
 import { canonicalJson, makeNonce, shortHash, type DemoState } from '@sealed-skill/protocol';
 import { api } from './api.js';
 import { InfoCard, StatusPill, TeePanel } from './components.js';
 import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, type VisualStep } from './steps.js';
 
-type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'b-fail' | 'prepare' | 'ownership' | 'transfer' | 'b-run';
+type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'runtime' | 'prepare' | 'ownership' | 'transfer';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,13 +39,16 @@ function base64ToBytes(value: string): Uint8Array {
   return out;
 }
 
-function signWithKeypair(kp: Keypair, message: unknown): string {
-  const bytes = new TextEncoder().encode(canonicalJson(message));
-  return bytesToBase64(nacl.sign.detached(bytes, kp.secretKey));
-}
-
 function solscanSearchUrl(value?: string): string | undefined {
   return value ? `https://solscan.io/search?q=${encodeURIComponent(value)}&cluster=devnet` : undefined;
+}
+
+function assertPublicKey(value: string, label: string) {
+  try {
+    return new PublicKey(value).toBase58();
+  } catch {
+    throw new Error(`${label} must be a valid Solana wallet address.`);
+  }
 }
 
 export function App() {
@@ -68,10 +70,11 @@ export function App() {
     currentOwner?: string;
     expectedOwnerOwnsNft: boolean;
   } | null>(null);
-  const [walletB] = useState(() => Keypair.generate());
+  const [recipientPublicKey, setRecipientPublicKey] = useState('');
 
-  const walletAPubkey = wallet.publicKey?.toBase58();
-  const walletBPubkey = useMemo(() => walletB.publicKey.toBase58(), [walletB]);
+  const connectedPubkey = wallet.publicKey?.toBase58();
+  const recipient = recipientPublicKey.trim();
+  const preparedRecipient = state.pendingTransferTo ?? recipient;
 
   const refresh = useCallback(async () => {
     const next = await api<DemoState>('/api/demo-state');
@@ -117,11 +120,19 @@ export function App() {
     });
   }
 
+  async function signWithConnectedWallet(message: unknown): Promise<string> {
+    if (!connectedPubkey) throw new Error('Connect a wallet first.');
+    if (!wallet.signMessage) throw new Error('Connected wallet does not support message signing.');
+    const bytes = new TextEncoder().encode(canonicalJson(message));
+    const sig = await wallet.signMessage(bytes);
+    return bytesToBase64(sig);
+  }
+
   async function generateArtifact() {
-    if (!walletAPubkey) throw new Error('Connect Wallet A first.');
+    if (!connectedPubkey) throw new Error('Connect wallet A first.');
     await runAction('generate', async () => {
       await animate(creatorStepLabels, setCreatorSteps, async () => {
-        const result = await api<{ state: DemoState; mintSignature?: string }>('/api/artifacts/generate', { ownerPublicKey: walletAPubkey });
+        const result = await api<{ state: DemoState; mintSignature?: string }>('/api/artifacts/generate', { ownerPublicKey: connectedPubkey });
         setState(result.state);
         setSuccess('Sealed artifact created. Review the NFT mint payload in TEE2.');
       });
@@ -133,12 +144,13 @@ export function App() {
       const result = await api<{ state: DemoState; nftMint: string; mintSignature?: string }>('/api/artifacts/mint', {});
       setState(result.state);
       setMintModalOpen(false);
-      setSuccess(`NFT minted to Wallet A: ${result.nftMint}`);
+      setSuccess(`NFT minted to ${state.artifact?.ownerPublicKey ?? 'the artifact owner'}: ${result.nftMint}`);
     });
   }
 
-  async function walletBTryBeforeTransfer() {
-    await runAction('b-fail', async () => {
+  async function runRuntimeAsConnectedWallet() {
+    if (!connectedPubkey) throw new Error('Connect the wallet you want to test.');
+    await runAction('runtime', async () => {
       const steps = makeSteps(runtimeStepLabels);
       const artifact = state.artifact;
       if (!artifact?.nftMint) throw new Error('Generate artifact first.');
@@ -151,49 +163,66 @@ export function App() {
 
       const message = {
         kind: 'runtime-request', artifactId: artifact.artifactId, nftMint: artifact.nftMint,
-        callerPublicKey: walletBPubkey, prompt: 'what sound does this animal make?', epoch: artifact.epoch, nonce: makeNonce('web-b-fail')
+        callerPublicKey: connectedPubkey, prompt: 'what sound does this animal make?', epoch: artifact.epoch, nonce: makeNonce('web-runtime')
       };
-      const signatureB64 = signWithKeypair(walletB, message);
+      const signatureB64 = await signWithConnectedWallet(message);
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/api/access/run`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callerPublicKey: walletBPubkey, prompt: message.prompt, message, signatureB64 })
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callerPublicKey: connectedPubkey, prompt: message.prompt, message, signatureB64 })
       });
       const json = await res.json();
-      if (res.status !== 403) throw new Error(`Expected Wallet B to fail before transfer. Got: ${JSON.stringify(json)}`);
-      steps[1] = { label: 'Rejected: Wallet B is not current NFT owner', state: 'error' };
+      if (res.status === 403) {
+        steps[1] = { label: 'Rejected: connected wallet is not current NFT owner', state: 'error' };
+        setRuntimeSteps([...steps]);
+        setSuccess('Access blocked: connected wallet is not the current NFT owner.');
+        return;
+      }
+      if (!res.ok) throw new Error(json.error ?? json.reason ?? `Runtime request failed with HTTP ${res.status}`);
+      steps[1] = { ...steps[1]!, state: 'done' };
       setRuntimeSteps([...steps]);
-      setSuccess('Access blocked as expected: Wallet B cannot use the sealed artifact before transfer.');
+      for (let i = 2; i < runtimeStepLabels.length; i++) {
+        steps[i] = { ...steps[i]!, state: 'running' };
+        setRuntimeSteps([...steps]);
+        await sleep(220);
+        steps[i] = { ...steps[i]!, state: 'done' };
+        setRuntimeSteps([...steps]);
+      }
+      setState(json.state);
+      setSuccess(`Runtime output: ${json.result.output}`);
     });
   }
 
   async function prepareTransfer() {
-    if (!walletAPubkey) throw new Error('Connect Wallet A first.');
     await runAction('prepare', async () => {
+      if (!connectedPubkey) throw new Error('Connect the current NFT owner first.');
+      const toPublicKey = assertPublicKey(recipient, 'Recipient wallet');
+      if (toPublicKey === connectedPubkey) throw new Error('Recipient must be a different wallet from the connected owner.');
       await animate(brokerStepLabels, setBrokerSteps, async () => {
-        const result = await api<{ state: DemoState }>('/api/transfer/prepare', { fromPublicKey: walletAPubkey, toPublicKey: walletBPubkey });
+        const result = await api<{ state: DemoState }>('/api/transfer/prepare', { fromPublicKey: connectedPubkey, toPublicKey });
         setState(result.state);
-        setSuccess('Broker TEE created owner-bound transfer capsule for Wallet B.');
+        setSuccess('Broker TEE created owner-bound transfer capsule for the recipient.');
       });
     });
   }
 
   async function completeTransfer() {
-    if (!walletAPubkey || !wallet.publicKey) throw new Error('Connect Wallet A first.');
     await runAction('transfer', async () => {
+      if (!connectedPubkey || !wallet.publicKey) throw new Error('Connect the current NFT owner first.');
+      const toPublicKey = assertPublicKey(preparedRecipient, 'Prepared recipient');
       const artifact = state.artifact;
       if (!artifact?.nftMint) throw new Error('Generate artifact first.');
       if (artifact.nftMint.startsWith('mock_')) {
-        const completed = await api<{ state: DemoState }>('/api/transfer/complete', { toPublicKey: walletBPubkey });
+        const completed = await api<{ state: DemoState }>('/api/transfer/complete', { toPublicKey });
         setState(completed.state);
         setSuccess('Mock transfer completed. Enable SOLANA_ENABLED=true for devnet token transfer.');
         return;
       }
-      const built = await api<{ txBase64: string }>('/api/transfer/build', { fromPublicKey: walletAPubkey, toPublicKey: walletBPubkey });
+      const built = await api<{ txBase64: string }>('/api/transfer/build', { fromPublicKey: connectedPubkey, toPublicKey });
       const tx = Transaction.from(base64ToBytes(built.txBase64));
       if (!wallet.signTransaction) throw new Error('Connected wallet does not support transaction signing.');
       const signed = await wallet.signTransaction(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction(sig, 'confirmed');
-      const completed = await api<{ state: DemoState }>('/api/transfer/complete', { toPublicKey: walletBPubkey, signature: sig });
+      const completed = await api<{ state: DemoState }>('/api/transfer/complete', { toPublicKey, signature: sig });
       setState(completed.state);
       setSuccess(`Solana transfer complete: ${sig}`);
     });
@@ -204,44 +233,28 @@ export function App() {
     await completeTransfer();
   }
 
-  async function checkWalletBOwnership() {
+  async function checkRecipientOwnership() {
     setOwnershipModalOpen(true);
     setOwnershipResult(null);
     await runAction('ownership', async () => {
+      const expectedOwner = assertPublicKey(preparedRecipient, 'Recipient wallet');
       const result = await api<{
         nftMint: string;
         expectedOwner: string;
         currentOwner?: string;
         expectedOwnerOwnsNft: boolean;
         state: DemoState;
-      }>('/api/ownership/check', { expectedOwner: walletBPubkey });
+      }>('/api/ownership/check', { expectedOwner });
       setOwnershipResult(result);
       setState(result.state);
-      setSuccess(result.expectedOwnerOwnsNft ? 'Wallet B owns the NFT. Runtime access is now enabled.' : 'Wallet B does not own the NFT yet.');
-    });
-  }
-
-  async function walletBRunAfterTransfer() {
-    await runAction('b-run', async () => {
-      await animate(runtimeStepLabels, setRuntimeSteps, async () => {
-        const artifact = state.artifact;
-        if (!artifact?.nftMint) throw new Error('Generate artifact first.');
-        const message = {
-          kind: 'runtime-request', artifactId: artifact.artifactId, nftMint: artifact.nftMint,
-          callerPublicKey: walletBPubkey, prompt: 'what sound does this animal make?', epoch: artifact.epoch, nonce: makeNonce('web-b-run')
-        };
-        const signatureB64 = signWithKeypair(walletB, message);
-        const result = await api<{ ok: boolean; result: { output: string }; state: DemoState }>('/api/access/run', { callerPublicKey: walletBPubkey, prompt: message.prompt, message, signatureB64 });
-        setState(result.state);
-        setSuccess(`Runtime output: ${result.result.output}`);
-      });
+      setSuccess(result.expectedOwnerOwnsNft ? 'Recipient owns the NFT. Runtime access is now enabled for that connected wallet.' : 'Recipient does not own the NFT yet.');
     });
   }
 
   const artifactHash = state.artifact?.encryptedBlob.sha256;
   const sealedKeyHash = state.artifact?.sealedKeyForBroker?.aadHash;
-  const canMint = Boolean(state.artifact && state.artifact.status === 'created' && walletAPubkey);
-  const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && walletAPubkey);
+  const canMint = Boolean(state.artifact && state.artifact.status === 'created' && connectedPubkey);
+  const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && connectedPubkey);
   const mintReview = {
     solanaAction: 'create mint, create associated token account, mint 1 token',
     mintAuthority: 'backend devnet payer',
@@ -254,8 +267,8 @@ export function App() {
   const transferReview = {
     solanaFunction: 'SPL Token transferChecked',
     nftMint: state.artifact?.nftMint,
-    fromOwner: walletAPubkey,
-    toOwner: state.pendingTransferTo ?? walletBPubkey,
+    fromOwner: connectedPubkey,
+    toOwner: preparedRecipient,
     currentEpoch: state.artifact?.epoch,
     teeAuthorization: {
       kind: state.transferTranscript?.payload.kind,
@@ -283,8 +296,8 @@ export function App() {
       </header>
 
       <section className="wallet-grid">
-        <InfoCard label="Wallet A" value={walletAPubkey ?? 'connect wallet'} />
-        <InfoCard label="Wallet B demo key" value={walletBPubkey} />
+        <InfoCard label="Connected wallet" value={connectedPubkey ?? 'connect wallet'} />
+        <InfoCard label="Transfer recipient" value={recipient || 'enter recipient wallet'} />
         <InfoCard label="Current owner" value={state.currentOwner} />
         <InfoCard label="NFT mint" value={state.artifact?.nftMint} />
         <InfoCard label="Encrypted artifact hash" value={artifactHash ? shortHash(artifactHash, 18) : undefined} />
@@ -296,11 +309,11 @@ export function App() {
       <section className="actions">
         <button className="reset-button" onClick={resetDemo} disabled={busy !== 'none'}>Reset demo</button>
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
-        <button onClick={generateArtifact} disabled={busy !== 'none' || !walletAPubkey}>2. Generate sealed animal artifact</button>
-        <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint}>3. Confirm Wallet B is blocked</button>
-        <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !walletAPubkey}>4. Prepare transfer A → B</button>
-        <button onClick={checkWalletBOwnership} disabled={busy !== 'none' || !state.artifact?.nftMint}>5. Check Wallet B ownership</button>
-        <button onClick={walletBRunAfterTransfer} disabled={busy !== 'none' || state.currentOwner !== walletBPubkey}>6. Wallet B asks runtime</button>
+        <button onClick={generateArtifact} disabled={busy !== 'none' || !connectedPubkey}>2. Generate sealed animal artifact</button>
+        <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>3. Connected wallet asks runtime</button>
+        <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey || !recipient}>4. Prepare broker transfer</button>
+        <button onClick={checkRecipientOwnership} disabled={busy !== 'none' || !state.artifact?.nftMint || !preparedRecipient}>5. Check recipient ownership</button>
+        <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>6. Connected wallet asks runtime</button>
       </section>
 
       <section className="notices">
@@ -311,11 +324,19 @@ export function App() {
 
       <section className="tee-grid">
         <TeePanel title="TEE1 Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement}>
-          {canTransfer && (
-            <div className="tee-panel-actions">
+          <div className="tee-panel-actions recipient-transfer-row">
+            <input
+              aria-label="Transfer recipient wallet"
+              className="recipient-input"
+              placeholder="Recipient wallet address"
+              value={recipientPublicKey}
+              onChange={(event) => setRecipientPublicKey(event.target.value)}
+              disabled={busy !== 'none'}
+            />
+            {canTransfer && (
               <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none'}>Transfer NFT</button>
-            </div>
-          )}
+            )}
+          </div>
         </TeePanel>
         <TeePanel title="TEE2 Creator" subtitle="Generates and encrypts the scarce artifact" accent="#13b981" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 7: 'runtime' }}>
           {canMint && (
@@ -371,7 +392,7 @@ export function App() {
             <div className="modal-heading">
               <div>
                 <p className="eyebrow">Solana devnet owner check</p>
-                <h2 id="ownership-modal-title">Wallet B Ownership</h2>
+                <h2 id="ownership-modal-title">Recipient Ownership</h2>
               </div>
               <button className="icon-button" onClick={() => setOwnershipModalOpen(false)} aria-label="Close ownership check">x</button>
             </div>
@@ -379,17 +400,17 @@ export function App() {
               {busy === 'ownership'
                 ? 'Checking Solana devnet...'
                 : ownershipResult?.expectedOwnerOwnsNft
-                  ? 'Yes. Wallet B owns this NFT.'
-                  : 'No. Wallet B does not own this NFT yet.'}
+                  ? 'Yes. The recipient owns this NFT.'
+                  : 'No. The recipient does not own this NFT yet.'}
             </div>
             <pre className="modal-data">{JSON.stringify({
               nftMint: ownershipResult?.nftMint ?? state.artifact?.nftMint,
-              walletB: walletBPubkey,
+              recipient: ownershipResult?.expectedOwner ?? preparedRecipient,
               currentSolanaOwner: ownershipResult?.currentOwner,
-              walletBOwnsNft: ownershipResult?.expectedOwnerOwnsNft ?? false
+              recipientOwnsNft: ownershipResult?.expectedOwnerOwnsNft ?? false
             }, null, 2)}</pre>
             <div className="modal-actions">
-              <button onClick={checkWalletBOwnership} disabled={busy !== 'none'}>Check again</button>
+              <button onClick={checkRecipientOwnership} disabled={busy !== 'none'}>Check again</button>
               <button className="reset-button" onClick={() => setOwnershipModalOpen(false)} disabled={busy !== 'none'}>Close</button>
             </div>
           </section>
