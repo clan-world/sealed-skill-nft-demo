@@ -113,21 +113,29 @@ export function App() {
 
   async function walletBTryBeforeTransfer() {
     await runAction('b-fail', async () => {
-      await animate(runtimeStepLabels.slice(0, 2), setRuntimeSteps, async () => {
-        const artifact = state.artifact;
-        if (!artifact?.nftMint) throw new Error('Generate artifact first.');
-        const message = {
-          kind: 'runtime-request', artifactId: artifact.artifactId, nftMint: artifact.nftMint,
-          callerPublicKey: walletBPubkey, prompt: 'what sound does this animal make?', epoch: artifact.epoch, nonce: makeNonce('web-b-fail')
-        };
-        const signatureB64 = signWithKeypair(walletB, message);
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/api/access/run`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callerPublicKey: walletBPubkey, prompt: message.prompt, message, signatureB64 })
-        });
-        const json = await res.json();
-        if (res.status !== 403) throw new Error(`Expected Wallet B to fail before transfer. Got: ${JSON.stringify(json)}`);
-        setSuccess('Correct: Wallet B was rejected before transfer.');
+      const steps = makeSteps(runtimeStepLabels);
+      const artifact = state.artifact;
+      if (!artifact?.nftMint) throw new Error('Generate artifact first.');
+      steps[0] = { ...steps[0]!, state: 'running' };
+      setRuntimeSteps([...steps]);
+      await sleep(220);
+      steps[0] = { ...steps[0]!, state: 'done' };
+      steps[1] = { ...steps[1]!, state: 'running' };
+      setRuntimeSteps([...steps]);
+
+      const message = {
+        kind: 'runtime-request', artifactId: artifact.artifactId, nftMint: artifact.nftMint,
+        callerPublicKey: walletBPubkey, prompt: 'what sound does this animal make?', epoch: artifact.epoch, nonce: makeNonce('web-b-fail')
+      };
+      const signatureB64 = signWithKeypair(walletB, message);
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/api/access/run`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callerPublicKey: walletBPubkey, prompt: message.prompt, message, signatureB64 })
       });
+      const json = await res.json();
+      if (res.status !== 403) throw new Error(`Expected Wallet B to fail before transfer. Got: ${JSON.stringify(json)}`);
+      steps[1] = { label: 'Rejected: Wallet B is not current NFT owner', state: 'error' };
+      setRuntimeSteps([...steps]);
+      setSuccess('Access blocked as expected: Wallet B cannot use the sealed artifact before transfer.');
     });
   }
 
@@ -211,7 +219,7 @@ export function App() {
         <button onClick={resetDemo} disabled={busy !== 'none'}>Reset demo</button>
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
         <button onClick={generateArtifact} disabled={busy !== 'none' || !walletAPubkey}>2. Generate sealed animal artifact</button>
-        <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact}>3. Wallet B tries before transfer</button>
+        <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact}>3. Confirm Wallet B is blocked</button>
         <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact || !walletAPubkey}>4. Prepare transfer A → B</button>
         <button onClick={completeTransfer} disabled={busy !== 'none' || !state.transferTranscript}>5. Complete transfer on Solana</button>
         <button onClick={walletBRunAfterTransfer} disabled={busy !== 'none' || state.currentOwner !== walletBPubkey}>6. Wallet B asks runtime</button>
