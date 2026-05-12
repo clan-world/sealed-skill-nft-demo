@@ -194,6 +194,20 @@ export function App() {
   async function prepareTransfer() {
     await runAction('prepare', async () => {
       if (!connectedPubkey) throw new Error('Connect the current NFT owner first.');
+      if (!recipient) {
+        const steps = makeSteps(brokerStepLabels);
+        setBrokerSteps([...steps]);
+        for (let i = 0; i < 4; i++) {
+          steps[i] = { ...steps[i]!, state: 'running' };
+          setBrokerSteps([...steps]);
+          await sleep(220);
+          steps[i] = { ...steps[i]!, state: 'done' };
+          setBrokerSteps([...steps]);
+        }
+        steps[4] = { ...steps[4]!, state: 'error' };
+        setBrokerSteps([...steps]);
+        throw new Error('Recipient wallet required before binding capsule.');
+      }
       const toPublicKey = assertPublicKey(recipient, 'Recipient wallet');
       if (toPublicKey === connectedPubkey) throw new Error('Recipient must be a different wallet from the connected owner.');
       await animate(brokerStepLabels, setBrokerSteps, async () => {
@@ -311,7 +325,7 @@ export function App() {
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
         <button onClick={generateArtifact} disabled={busy !== 'none' || !connectedPubkey}>2. Generate sealed animal artifact</button>
         <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>3. Connected wallet asks runtime</button>
-        <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey || !recipient}>4. Prepare broker transfer</button>
+        <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>4. Prepare broker transfer</button>
         <button onClick={checkRecipientOwnership} disabled={busy !== 'none' || !state.artifact?.nftMint || !preparedRecipient}>5. Check recipient ownership</button>
         <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>6. Connected wallet asks runtime</button>
       </section>
@@ -323,7 +337,7 @@ export function App() {
       </section>
 
       <section className="tee-grid">
-        <TeePanel title="TEE1 Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement}>
+        <TeePanel title="TEE1 Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
           <div className="tee-panel-actions recipient-transfer-row">
             <input
               aria-label="Transfer recipient wallet"
@@ -338,14 +352,14 @@ export function App() {
             )}
           </div>
         </TeePanel>
-        <TeePanel title="TEE2 Creator" subtitle="Generates and encrypts the scarce artifact" accent="#13b981" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 7: 'runtime' }}>
+        <TeePanel title="TEE2 Creator" subtitle="Generates and encrypts the scarce artifact" accent="#13b981" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 3: 'creator', 4: 'creator', 5: 'creator', 6: 'creator', 7: 'broker' }}>
           {canMint && (
             <div className="tee-panel-actions">
               <button onClick={() => setMintModalOpen(true)} disabled={busy !== 'none'}>Mint NFT</button>
             </div>
           )}
         </TeePanel>
-        <TeePanel title="TEE3 Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} />
+        <TeePanel title="TEE3 Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} stepTones={{ 1: 'broker', 3: 'broker', 4: 'creator' }} />
       </section>
 
       {mintModalOpen && (

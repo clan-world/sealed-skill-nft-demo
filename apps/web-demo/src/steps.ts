@@ -19,7 +19,7 @@ export const creatorStepLabels = [
 
 export const brokerStepLabels = [
   'Receive transfer request',
-  'Check connected wallet is current owner',
+  'Check current owner of NFT is caller',
   'Unwrap artifact key inside Broker TEE',
   'Create owner-bound transfer capsule',
   'Bind capsule to recipient wallet and epoch',
