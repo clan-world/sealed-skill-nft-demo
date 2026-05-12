@@ -14,8 +14,7 @@ export const creatorStepLabels = [
   'Encrypt artifact with symmetric key',
   'Save encrypted artifact blob',
   'Seal key to Broker TEE',
-  'Sign creation transcript',
-  'Mint demo NFT to Wallet A'
+  'Sign creation transcript'
 ];
 
 export const brokerStepLabels = [

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { VisualStep } from './steps.js';
 import { shortHash } from '@sealed-skill/protocol';
 
-export function TeePanel(props: { title: string; subtitle: string; steps: VisualStep[]; accent: string; publicKey?: string | undefined; measurement?: string | undefined; children?: ReactNode }) {
+export function TeePanel(props: { title: string; subtitle: string; steps: VisualStep[]; accent: string; publicKey?: string | undefined; measurement?: string | undefined; children?: ReactNode; stepTones?: Record<number, 'broker' | 'runtime'> }) {
   return (
     <section className="tee-panel" style={{ borderColor: props.accent }}>
       <div className="tee-heading">
@@ -18,7 +18,7 @@ export function TeePanel(props: { title: string; subtitle: string; steps: Visual
       </div>
       <ol className="steps">
         {props.steps.map((step, i) => (
-          <li key={step.label} className={`step ${step.state}`}>
+          <li key={step.label} className={`step ${step.state} ${props.stepTones?.[i] ? `step-tone-${props.stepTones[i]}` : ''}`}>
             <span className="step-icon">{step.state === 'done' ? '✓' : step.state === 'running' ? '◌' : step.state === 'error' ? '!' : '·'}</span>
             <span>{i + 1}. {step.label}</span>
           </li>

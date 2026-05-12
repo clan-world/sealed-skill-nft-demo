@@ -39,6 +39,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 .step.done { color: #d1fae5; border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.08); }
 .step.running { color: #dbeafe; border-color: rgba(96,165,250,0.6); background: rgba(59,130,246,0.16); }
 .step.error { color: #fecdd3; border-color: rgba(244,63,94,0.5); }
+.step-tone-broker { border-color: rgba(155,92,255,0.58); background: rgba(155,92,255,0.1); }
+.step-tone-runtime { border-color: rgba(79,140,255,0.58); background: rgba(79,140,255,0.1); }
 .step-icon { display: inline-grid; place-items: center; min-width: 21px; height: 21px; border-radius: 999px; background: rgba(255,255,255,0.08); font-weight: 900; }
 .step.running .step-icon { animation: pulse 900ms infinite; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.18); opacity: 1; } }

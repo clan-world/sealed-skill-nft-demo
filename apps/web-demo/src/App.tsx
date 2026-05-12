@@ -8,7 +8,7 @@ import { api } from './api.js';
 import { InfoCard, StatusPill, TeePanel } from './components.js';
 import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, type VisualStep } from './steps.js';
 
-type Busy = 'none' | 'reset' | 'register' | 'generate' | 'b-fail' | 'prepare' | 'transfer' | 'b-run';
+type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'b-fail' | 'prepare' | 'transfer' | 'b-run';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,6 +59,7 @@ export function App() {
   const [creatorSteps, setCreatorSteps] = useState(makeSteps(creatorStepLabels));
   const [brokerSteps, setBrokerSteps] = useState(makeSteps(brokerStepLabels));
   const [runtimeSteps, setRuntimeSteps] = useState(makeSteps(runtimeStepLabels));
+  const [mintModalOpen, setMintModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [walletB] = useState(() => Keypair.generate());
 
@@ -101,6 +102,8 @@ export function App() {
       setCreatorSteps(makeSteps(creatorStepLabels));
       setBrokerSteps(makeSteps(brokerStepLabels));
       setRuntimeSteps(makeSteps(runtimeStepLabels));
+      setMintModalOpen(false);
+      setTransferModalOpen(false);
       setSuccess('Demo reset.');
     });
   }
@@ -111,8 +114,17 @@ export function App() {
       await animate(creatorStepLabels, setCreatorSteps, async () => {
         const result = await api<{ state: DemoState; mintSignature?: string }>('/api/artifacts/generate', { ownerPublicKey: walletAPubkey });
         setState(result.state);
-        setSuccess(`Sealed artifact created. NFT mint: ${result.state.artifact?.nftMint ?? 'mock'}`);
+        setSuccess('Sealed artifact created. Review the NFT mint payload in TEE2.');
       });
+    });
+  }
+
+  async function mintArtifactNft() {
+    await runAction('mint', async () => {
+      const result = await api<{ state: DemoState; nftMint: string; mintSignature?: string }>('/api/artifacts/mint', {});
+      setState(result.state);
+      setMintModalOpen(false);
+      setSuccess(`NFT minted to Wallet A: ${result.nftMint}`);
     });
   }
 
@@ -202,7 +214,17 @@ export function App() {
 
   const artifactHash = state.artifact?.encryptedBlob.sha256;
   const sealedKeyHash = state.artifact?.sealedKeyForBroker?.aadHash;
+  const canMint = Boolean(state.artifact && state.artifact.status === 'created' && walletAPubkey);
   const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && walletAPubkey);
+  const mintReview = {
+    solanaAction: 'create mint, create associated token account, mint 1 token',
+    mintAuthority: 'backend devnet payer',
+    recipientWallet: state.artifact?.ownerPublicKey,
+    scarceArtifactPointer: state.artifact?.encryptedBlob,
+    sealedKeyForBroker: state.artifact?.sealedKeyForBroker,
+    creatorTranscriptHash: state.creationTranscript?.payloadHash,
+    runtimePolicy: state.artifact?.runtimePolicy
+  };
   const transferReview = {
     solanaFunction: 'SPL Token transferChecked',
     nftMint: state.artifact?.nftMint,
@@ -249,8 +271,8 @@ export function App() {
         <button className="reset-button" onClick={resetDemo} disabled={busy !== 'none'}>Reset demo</button>
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
         <button onClick={generateArtifact} disabled={busy !== 'none' || !walletAPubkey}>2. Generate sealed animal artifact</button>
-        <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact}>3. Confirm Wallet B is blocked</button>
-        <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact || !walletAPubkey}>4. Prepare transfer A → B</button>
+        <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint}>3. Confirm Wallet B is blocked</button>
+        <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !walletAPubkey}>4. Prepare transfer A → B</button>
         <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none' || !canTransfer}>5. Review NFT transfer</button>
         <button onClick={walletBRunAfterTransfer} disabled={busy !== 'none' || state.currentOwner !== walletBPubkey}>6. Wallet B asks runtime</button>
       </section>
@@ -269,9 +291,34 @@ export function App() {
             </div>
           )}
         </TeePanel>
-        <TeePanel title="TEE2 Creator" subtitle="Generates and encrypts the scarce artifact" accent="#13b981" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} />
+        <TeePanel title="TEE2 Creator" subtitle="Generates and encrypts the scarce artifact" accent="#13b981" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 7: 'runtime' }}>
+          {canMint && (
+            <div className="tee-panel-actions">
+              <button onClick={() => setMintModalOpen(true)} disabled={busy !== 'none'}>Mint NFT</button>
+            </div>
+          )}
+        </TeePanel>
         <TeePanel title="TEE3 Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} />
       </section>
+
+      {mintModalOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setMintModalOpen(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="mint-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">NFT mint payload</p>
+                <h2 id="mint-modal-title">Mint NFT</h2>
+              </div>
+              <button className="icon-button" onClick={() => setMintModalOpen(false)} aria-label="Close mint review">x</button>
+            </div>
+            <pre className="modal-data">{JSON.stringify(mintReview, null, 2)}</pre>
+            <div className="modal-actions">
+              <button className="reset-button" onClick={() => setMintModalOpen(false)} disabled={busy !== 'none'}>Cancel</button>
+              <button onClick={mintArtifactNft} disabled={busy !== 'none' || !canMint}>Mint</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {transferModalOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setTransferModalOpen(false)}>

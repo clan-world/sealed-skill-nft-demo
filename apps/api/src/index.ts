@@ -105,18 +105,7 @@ app.post('/api/artifacts/generate', async (req, res, next) => {
       })
     });
 
-    let mintSignature: string | undefined;
-    let nftMint: string | undefined;
-    if (solanaEnabled) {
-      const payer = await loadOrCreateKeypair(backendKeypairPath);
-      const minted = await mintOneSupplyDemoNft({ connection, payer, owner: new PublicKey(ownerPublicKey) });
-      nftMint = minted.mint.toBase58();
-      mintSignature = minted.signature;
-    } else {
-      nftMint = `mock_mint_${created.artifact.artifactId}`;
-    }
-
-    const artifact: ArtifactRecord = { ...created.artifact, nftMint, status: 'minted' };
+    const artifact: ArtifactRecord = { ...created.artifact, status: 'created' };
     const next = await store.update((s) => {
       const nextState = {
         ...s,
@@ -124,7 +113,7 @@ app.post('/api/artifacts/generate', async (req, res, next) => {
         artifact,
         creationTranscript: created.transcript,
         currentOwner: ownerPublicKey,
-        log: [`${new Date().toISOString()} Artifact generated and NFT minted: ${nftMint}`, ...s.log]
+        log: [`${new Date().toISOString()} Sealed artifact generated and ready to mint`, ...s.log]
       };
       delete nextState.transferTranscript;
       delete nextState.lastRuntimeResult;
@@ -132,7 +121,41 @@ app.post('/api/artifacts/generate', async (req, res, next) => {
       return nextState;
     });
 
-    res.json({ state: next, mintSignature });
+    res.json({ state: next });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/artifacts/mint', async (_req, res, next) => {
+  try {
+    const state = await store.read();
+    const artifact = requireArtifact(state);
+    if (artifact.nftMint) {
+      res.json({ state, nftMint: artifact.nftMint });
+      return;
+    }
+
+    let mintSignature: string | undefined;
+    let nftMint: string;
+    if (solanaEnabled) {
+      const payer = await loadOrCreateKeypair(backendKeypairPath);
+      const minted = await mintOneSupplyDemoNft({ connection, payer, owner: new PublicKey(artifact.ownerPublicKey) });
+      nftMint = minted.mint.toBase58();
+      mintSignature = minted.signature;
+    } else {
+      nftMint = `mock_mint_${artifact.artifactId}`;
+    }
+
+    const mintedArtifact: ArtifactRecord = { ...artifact, nftMint, status: 'minted' };
+    const nextState = await store.update((s) => ({
+      ...s,
+      artifact: mintedArtifact,
+      currentOwner: artifact.ownerPublicKey,
+      log: [`${new Date().toISOString()} NFT minted to Wallet A: ${nftMint}`, ...s.log]
+    }));
+
+    res.json({ state: nextState, nftMint, mintSignature });
   } catch (error) {
     next(error);
   }
