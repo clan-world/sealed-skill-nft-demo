@@ -52,6 +52,12 @@ export interface ArtifactRecord {
   creatorMeasurement: string;
   ownerPublicKey: string;
   nftMint?: string;
+  collectionMint?: string;
+  tokenProgram?: string;
+  metadataUri?: string;
+  hookProgramId?: string;
+  artifactPda?: string;
+  approvalPda?: string;
   encryptedBlob: EncryptedBlobRef;
   sealedKeyForBroker: WrappedSecret;
   runtimePolicy: RuntimePolicy;

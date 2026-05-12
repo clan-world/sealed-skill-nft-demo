@@ -7,7 +7,7 @@ import { PublicKey, Transaction } from '@solana/web3.js';
 import { canonicalJson, hashJson, type ArtifactRecord, type SignedEnvelope, type TeeRecord } from '@sealed-skill/protocol';
 import { fetchJson } from '@sealed-skill/tee-common';
 import { mergeTee } from '@sealed-skill/demo-state';
-import { buildDemoNftTransferTx, getCurrentDemoNftOwner, loadOrCreateKeypair, makeConnection, mintOneSupplyDemoNft } from '@sealed-skill/solana';
+import { buildDemoNftTransferTx, getCurrentDemoNftOwner, getSealedSkillProgramId, loadOrCreateKeypair, makeConnection, mintOneSupplyDemoNft, recordBrokerTransferApproval } from '@sealed-skill/solana';
 import { StateStore } from './state.js';
 
 const port = Number(process.env.API_PORT ?? 8787);
@@ -15,6 +15,9 @@ const dataDir = process.env.DEMO_DATA_DIR ?? '../../data';
 const solanaEnabled = (process.env.SOLANA_ENABLED ?? 'false') === 'true';
 const rpcUrl = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
 const backendKeypairPath = process.env.BACKEND_KEYPAIR_PATH ?? `${dataDir}/solana/backend-keypair.json`;
+const collectionStatePath = process.env.COLLECTION_STATE_PATH ?? `${dataDir}/solana/token-2022-collection.json`;
+const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? process.env.VITE_PUBLIC_BASE_URL ?? 'https://nft.clan-world.com').replace(/\/+$/, '');
+const sealedSkillProgramId = getSealedSkillProgramId(process.env.SEALED_SKILL_PROGRAM_ID);
 const teeBrokerUrl = process.env.TEE_BROKER_URL ?? 'http://localhost:4101';
 const teeCreatorUrl = process.env.TEE_CREATOR_URL ?? 'http://localhost:4102';
 const teeRuntimeUrl = process.env.TEE_RUNTIME_URL ?? 'http://localhost:4103';
@@ -58,11 +61,70 @@ function verifyRuntimeRequestSignature(input: {
 }
 
 app.get('/api/health', async (_req, res) => {
-  res.json({ ok: true, solanaEnabled, rpcUrl, teeBrokerUrl, teeCreatorUrl, teeRuntimeUrl });
+  res.json({ ok: true, solanaEnabled, rpcUrl, tokenProgram: 'Token-2022', sealedSkillProgramId: sealedSkillProgramId.toBase58(), teeBrokerUrl, teeCreatorUrl, teeRuntimeUrl });
 });
 
 app.get('/api/demo-state', async (_req, res) => {
   res.json(await store.read());
+});
+
+app.get('/api/nft/collection-metadata', (_req, res) => {
+  res.json({
+    name: 'Sealed Skill Collection',
+    symbol: 'SSKILL',
+    description: 'Demo collection for TEE-gated sealed skill NFTs on Solana devnet.',
+    image: `${publicBaseUrl}/api/nft/collection-image.svg`
+  });
+});
+
+app.get('/api/nft/collection-image.svg', (_req, res) => {
+  res.type('image/svg+xml').send(renderNftSvg('Sealed Skill', 'TEE-gated NFT collection', '#13b981'));
+});
+
+app.get('/api/nft/metadata/:mint', async (req, res, next) => {
+  try {
+    const state = await store.read();
+    const artifact = state.artifact;
+    const mint = req.params.mint;
+    if (!artifact?.nftMint || artifact.nftMint !== mint) {
+      res.status(404).json({ error: 'metadata not found for mint' });
+      return;
+    }
+    res.json({
+      name: `Sealed Skill #${artifact.artifactId.slice(0, 8)}`,
+      symbol: 'SSNFT',
+      description: 'A Token-2022 collectible NFT that gates a sealed TEE artifact. The animal stays hidden; approved runtime calls can use it.',
+      image: `${publicBaseUrl}/api/nft/image/${mint}.svg`,
+      external_url: publicBaseUrl,
+      attributes: [
+        { trait_type: 'Artifact status', value: artifact.status },
+        { trait_type: 'Epoch', value: String(artifact.epoch) },
+        { trait_type: 'Transfer gate', value: 'TEE1 broker hook' },
+        { trait_type: 'Encrypted artifact hash', value: artifact.encryptedBlob.sha256 }
+      ],
+      properties: {
+        category: 'image',
+        tokenStandard: 'Token-2022',
+        hookProgramId: artifact.hookProgramId,
+        collectionMint: artifact.collectionMint
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/nft/image/:mint.svg', async (req, res, next) => {
+  try {
+    const state = await store.read();
+    if (state.artifact?.nftMint !== req.params.mint) {
+      res.status(404).send('not found');
+      return;
+    }
+    res.type('image/svg+xml').send(renderNftSvg('Sealed Skill NFT', `epoch ${state.artifact.epoch}`, '#9b5cff'));
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post('/api/demo/reset', async (_req, res) => {
@@ -140,11 +202,30 @@ app.post('/api/artifacts/mint', async (_req, res, next) => {
     let nftMint: string;
     if (solanaEnabled) {
       const payer = await loadOrCreateKeypair(backendKeypairPath);
-      const minted = await mintOneSupplyDemoNft({ connection, payer, owner: new PublicKey(artifact.ownerPublicKey) });
+      const minted = await mintOneSupplyDemoNft({
+        connection,
+        payer,
+        owner: new PublicKey(artifact.ownerPublicKey),
+        collectionStatePath,
+        metadataBaseUrl: publicBaseUrl,
+        hookProgramId: sealedSkillProgramId,
+        artifactId: artifact.artifactId,
+        encryptedBlobHash: artifact.encryptedBlob.sha256,
+        runtimePolicyHash: hashJson(artifact.runtimePolicy)
+      });
       nftMint = minted.mint.toBase58();
       mintSignature = minted.signature;
+      artifact.collectionMint = minted.collectionMint.toBase58();
+      artifact.tokenProgram = minted.tokenProgram.toBase58();
+      artifact.metadataUri = minted.metadataUri;
+      artifact.hookProgramId = minted.hookProgramId.toBase58();
+      artifact.artifactPda = minted.artifactPda.toBase58();
+      artifact.approvalPda = minted.approvalPda.toBase58();
     } else {
       nftMint = `mock_mint_${artifact.artifactId}`;
+      artifact.tokenProgram = 'mock-token-2022';
+      artifact.metadataUri = `${publicBaseUrl}/api/nft/metadata/${nftMint}`;
+      artifact.hookProgramId = sealedSkillProgramId.toBase58();
     }
 
     const mintedArtifact: ArtifactRecord = { ...artifact, nftMint, status: 'minted' };
@@ -229,14 +310,31 @@ app.post('/api/transfer/prepare', async (req, res, next) => {
       method: 'POST',
       body: JSON.stringify({ artifact, nftMint: artifact.nftMint, fromOwner: fromPublicKey, toOwner: toPublicKey })
     });
+    let approvalSignature: string | undefined;
+    let approvalPda = artifact.approvalPda;
+    if (solanaEnabled) {
+      const payer = await loadOrCreateKeypair(backendKeypairPath);
+      const recorded = await recordBrokerTransferApproval({
+        connection,
+        payer,
+        mint: new PublicKey(artifact.nftMint),
+        toOwner: new PublicKey(toPublicKey),
+        capsuleHash: brokered.capsule.payloadHash,
+        expiresAt: brokered.transcript.payload.expiresAt,
+        programId: sealedSkillProgramId
+      });
+      approvalSignature = recorded.signature;
+      approvalPda = recorded.approvalPda.toBase58();
+    }
 
     const next = await store.update((s) => ({
       ...s,
       transferTranscript: brokered.transcript,
       pendingTransferTo: toPublicKey,
-      log: [`${new Date().toISOString()} Transfer prepared from ${fromPublicKey} to ${toPublicKey}`, ...s.log]
+      artifact: approvalPda ? { ...artifact, approvalPda } : artifact,
+      log: [`${new Date().toISOString()} Transfer prepared from ${fromPublicKey} to ${toPublicKey}${approvalSignature ? ` approvalTx=${approvalSignature}` : ''}`, ...s.log]
     }));
-    res.json({ ok: true, ...brokered, state: next });
+    res.json({ ok: true, ...brokered, approvalSignature, state: next });
   } catch (error) {
     next(error);
   }
@@ -254,7 +352,7 @@ app.post('/api/transfer/build', async (req, res, next) => {
       res.json({ mock: true, message: 'SOLANA_ENABLED=false; call /api/transfer/complete directly.' });
       return;
     }
-    const tx = await buildDemoNftTransferTx({ connection, mint: new PublicKey(artifact.nftMint), fromOwner: fromPublicKey, toOwner: toPublicKey });
+    const tx = await buildDemoNftTransferTx({ connection, mint: new PublicKey(artifact.nftMint), fromOwner: fromPublicKey, toOwner: toPublicKey, hookProgramId: sealedSkillProgramId });
     res.json({ txBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64') });
   } catch (error) {
     next(error);
@@ -344,6 +442,21 @@ app.post('/api/ownership/check', async (req, res, next) => {
 app.post('/api/tamper/wrong-owner', async (_req, res) => {
   res.json({ ok: false, reason: 'This endpoint is a UI hook for the tamper demo. Connect a non-owner wallet before transfer.' });
 });
+
+function renderNftSvg(title: string, subtitle: string, accent: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <rect width="1200" height="1200" fill="#070a12"/>
+  <rect x="80" y="80" width="1040" height="1040" rx="52" fill="#10172a" stroke="${accent}" stroke-width="8"/>
+  <circle cx="600" cy="480" r="190" fill="${accent}" opacity="0.18"/>
+  <path d="M450 500c0-83 67-150 150-150s150 67 150 150v120h46c24 0 44 20 44 44v178c0 24-20 44-44 44H404c-24 0-44-20-44-44V664c0-24 20-44 44-44h46V500zm74 120h152V500c0-42-34-76-76-76s-76 34-76 76v120z" fill="${accent}"/>
+  <text x="600" y="930" text-anchor="middle" fill="#eef2ff" font-family="Inter,Arial,sans-serif" font-size="62" font-weight="800">${escapeXml(title)}</text>
+  <text x="600" y="1005" text-anchor="middle" fill="#b9c1d9" font-family="Inter,Arial,sans-serif" font-size="34">${escapeXml(subtitle)}</text>
+</svg>`;
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[char] ?? char);
+}
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);

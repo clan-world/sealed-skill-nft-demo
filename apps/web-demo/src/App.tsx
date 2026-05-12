@@ -270,17 +270,26 @@ export function App() {
   const canMint = Boolean(state.artifact && state.artifact.status === 'created' && connectedPubkey);
   const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && connectedPubkey);
   const mintReview = {
-    solanaAction: 'create mint, create associated token account, mint 1 token',
+    solanaAction: 'create Token-2022 collectible mint, attach metadata/group/hook extensions, mint 1 token',
     mintAuthority: 'backend devnet payer',
     recipientWallet: state.artifact?.ownerPublicKey,
+    tokenProgram: state.artifact?.tokenProgram,
+    collectionMint: state.artifact?.collectionMint,
+    metadataUri: state.artifact?.metadataUri,
+    transferHookProgram: state.artifact?.hookProgramId,
+    artifactGatePda: state.artifact?.artifactPda,
     scarceArtifactPointer: state.artifact?.encryptedBlob,
     sealedKeyForBroker: state.artifact?.sealedKeyForBroker,
     creatorTranscriptHash: state.creationTranscript?.payloadHash,
     runtimePolicy: state.artifact?.runtimePolicy
   };
   const transferReview = {
-    solanaFunction: 'SPL Token transferChecked',
+    solanaFunction: 'Token-2022 transferChecked with sealed-skill transfer hook',
     nftMint: state.artifact?.nftMint,
+    tokenProgram: state.artifact?.tokenProgram,
+    transferHookProgram: state.artifact?.hookProgramId,
+    artifactGatePda: state.artifact?.artifactPda,
+    approvalPda: state.artifact?.approvalPda,
     fromOwner: connectedPubkey,
     toOwner: preparedRecipient,
     currentEpoch: state.artifact?.epoch,
@@ -314,6 +323,8 @@ export function App() {
         <InfoCard label="Transfer recipient" value={recipient || 'enter recipient wallet'} />
         <InfoCard label="Current owner" value={state.currentOwner} />
         <InfoCard label="NFT mint" value={state.artifact?.nftMint} />
+        <InfoCard label="Token program" value={state.artifact?.tokenProgram} />
+        <InfoCard label="Hook program" value={state.artifact?.hookProgramId} />
         <InfoCard label="Encrypted artifact hash" value={artifactHash ? shortHash(artifactHash, 18) : undefined} />
         <InfoCard label="Sealed key hash" value={sealedKeyHash ? shortHash(sealedKeyHash, 18) : undefined} />
         <InfoCard label="Plaintext animal" hidden />

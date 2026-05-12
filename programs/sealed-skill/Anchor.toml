@@ -3,10 +3,10 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-sealed_skill = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkgTsrYecUQvP"
+sealed_skill = "APpCcBAPBAn92mz8KLv3RgFTqLKHMyMAvepudiUpNb6s"
 
 [programs.devnet]
-sealed_skill = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkgTsrYecUQvP"
+sealed_skill = "APpCcBAPBAn92mz8KLv3RgFTqLKHMyMAvepudiUpNb6s"
 
 [registry]
 url = "https://api.apr.dev"
