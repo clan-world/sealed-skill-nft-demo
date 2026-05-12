@@ -4,14 +4,14 @@
 
 - Mock TEE attestation.
 - Real encryption and key wrapping.
-- Solana devnet 1-supply demo NFT token.
+- Solana devnet 1-supply demo NFTee token.
 - Runtime ownership checks.
 - Signed transcripts.
 - Single-screen visual demo.
 
 ## Phase 2 — Stronger Solana integration
 
-- Replace the demo NFT token with Metaplex Core or Token-2022.
+- Replace the demo NFTee token with Metaplex Core or Token-2022.
 - Add Token-2022 Transfer Hook or Metaplex lifecycle validation.
 - Move transfer authorization checks into the Solana program.
 - Add on-chain TEE registry writes.
@@ -38,6 +38,6 @@
 
 ## Phase 6 — Marketplace support
 
-- Support normal NFT marketplace transfer paths.
+- Support normal NFTee marketplace transfer paths.
 - Keep key access bound to current owner and current epoch.
 - Add transfer history, policy history, and public provenance.

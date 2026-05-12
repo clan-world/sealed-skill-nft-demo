@@ -1,12 +1,12 @@
-# Sealed Skill NFT Demo
+# Sealed Skill NFTee Demo
 
-A minimal monorepo demo for a **Solana NFT that controls a secret born inside a TEE-like service**.
+A minimal monorepo demo for a **Solana NFTee that controls a secret born inside a TEE-like service**.
 
 The demo shows this story:
 
 1. A Creator TEE generates a private animal artifact.
 2. The artifact is encrypted and stored outside the chain.
-3. A Solana devnet Token-2022 collectible NFT is minted to the connected owner wallet.
+3. A Solana devnet Token-2022 collectible NFTee is minted to the connected owner wallet.
 4. A different connected wallet cannot use the secret before transfer.
 5. The owner prepares and completes a broker-authorized transfer to a typed recipient wallet.
 6. The new owner can ask the Runtime TEE, “What sound does this animal make?”
@@ -29,7 +29,7 @@ Real:
 - Symmetric encryption for the private artifact.
 - Key wrapping between TEE-like services.
 - Signed transcripts for creator, broker, and runtime actions.
-- Solana devnet minting and transfer flow for a 1-supply Token-2022 collectible NFT.
+- Solana devnet minting and transfer flow for a 1-supply Token-2022 collectible NFTee.
 - Token-2022 transfer hook enforcement for broker-approved transfers.
 - UI step-by-step visualization of TEE processing.
 - Local and AWS deployment helpers.
@@ -44,4 +44,4 @@ Mocked for MVP:
 
 ## One sentence
 
-The NFT does not contain the secret. It controls who can ask an approved runtime to use the secret inside a protected environment.
+The NFTee does not contain the secret. It controls who can ask an approved runtime to use the secret inside a protected environment.

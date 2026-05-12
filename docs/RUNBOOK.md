@@ -116,7 +116,7 @@ Then use the UI.
 2. Click **Register TEEs**.
 3. Click **Generate sealed animal artifact**.
 4. The Creator TEE checklist lights up one step at a time.
-5. The UI shows encrypted artifact hash, sealed key hash, and NFT mint.
+5. The UI shows encrypted artifact hash, sealed key hash, and NFTee mint.
 6. Click **Wallet B tries before transfer**.
 7. Runtime TEE rejects Wallet B.
 8. Click **Prepare transfer A to B**.

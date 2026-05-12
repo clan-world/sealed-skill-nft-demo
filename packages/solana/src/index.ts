@@ -149,8 +149,8 @@ export async function mintOneSupplyToken2022Collectible(input: Token2022Collecti
     updateAuthority: payer.publicKey,
     mint: mint.publicKey,
     mintAuthority: payer.publicKey,
-    name: 'Sealed Skill NFT',
-    symbol: 'SSNFT',
+    name: 'Vellum Sealed Skill NFTee',
+    symbol: 'NFTee',
     uri: metadataUri
   }));
   initTx.add(SystemProgram.transfer({
@@ -233,7 +233,7 @@ export async function buildToken2022BrokerTransferTx(input: {
   const { connection, mint, fromOwner, toOwner } = input;
   const hookProgramId = input.hookProgramId ?? SEALED_SKILL_PROGRAM_ID;
   const fromAta = await getAssociatedTokenAddress(mint, fromOwner, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
-  const toAta = await getAssociatedTokenAddress(mint, toOwner, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+  const toAta = await getAssociatedTokenAddress(mint, toOwner, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
   const artifactPda = deriveArtifactPda(mint, hookProgramId);
   const approvalPda = deriveApprovalPda(mint, hookProgramId);
   const extraAccountMetasPda = deriveExtraAccountMetasPda(mint, hookProgramId);
@@ -242,10 +242,10 @@ export async function buildToken2022BrokerTransferTx(input: {
   tx.add(createAssociatedTokenAccountIdempotentInstruction(fromOwner, toAta, toOwner, mint, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
   const transferIx = createTransferCheckedInstruction(fromAta, mint, toAta, fromOwner, 1, 0, [], TOKEN_2022_PROGRAM_ID);
   transferIx.keys.push(
+    { pubkey: extraAccountMetasPda, isSigner: false, isWritable: false },
     { pubkey: artifactPda, isSigner: false, isWritable: true },
     { pubkey: approvalPda, isSigner: false, isWritable: true },
-    { pubkey: hookProgramId, isSigner: false, isWritable: false },
-    { pubkey: extraAccountMetasPda, isSigner: false, isWritable: false }
+    { pubkey: hookProgramId, isSigner: false, isWritable: false }
   );
   tx.add(transferIx);
   tx.feePayer = fromOwner;
@@ -278,6 +278,32 @@ export async function recordBrokerTransferApproval(input: {
   }));
   const signature = await sendAndConfirmTransaction(input.connection, tx, [input.payer], { commitment: 'confirmed' });
   return { signature, artifactPda, approvalPda };
+}
+
+export async function syncRegisteredArtifactOwner(input: {
+  connection: Connection;
+  payer: Keypair;
+  mint: PublicKey;
+  owner: PublicKey;
+  artifactId: string;
+  encryptedBlobHash: string;
+  runtimePolicyHash: string;
+  programId?: PublicKey;
+}): Promise<{ signature: string; artifactPda: PublicKey }> {
+  const programId = input.programId ?? SEALED_SKILL_PROGRAM_ID;
+  const artifactPda = deriveArtifactPda(input.mint, programId);
+  const tx = new Transaction().add(createRegisterArtifactInstruction({
+    programId,
+    admin: input.payer.publicKey,
+    mint: input.mint,
+    artifact: artifactPda,
+    artifactIdHash: bytes32(input.artifactId),
+    encryptedBlobHash: hex32(input.encryptedBlobHash),
+    runtimePolicyHash: bytes32(input.runtimePolicyHash),
+    owner: input.owner
+  }));
+  const signature = await sendAndConfirmTransaction(input.connection, tx, [input.payer], { commitment: 'confirmed' });
+  return { signature, artifactPda };
 }
 
 async function loadOrCreateCollectionMint(input: {
@@ -323,7 +349,7 @@ async function loadOrCreateCollectionMint(input: {
     updateAuthority: input.payer.publicKey,
     mint: mint.publicKey,
     mintAuthority: input.payer.publicKey,
-    name: 'Sealed Skill Collection',
+    name: 'Vellum Sealed Skill Collection',
     symbol: 'SSKILL',
     uri: metadataUri
   }));

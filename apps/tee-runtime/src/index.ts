@@ -1,5 +1,7 @@
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: '../../.env' });
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { decryptArtifactJson, generateX25519KeyPair, unwrapSecretWithPrivateKey } from '@sealed-skill/crypto';
 import { answerAnimalSound, isAllowedPrompt } from '@sealed-skill/policies';
 import { hashJson, makeNonce, nowIso, type ArtifactRecord, type RuntimeTranscript } from '@sealed-skill/protocol';
@@ -7,7 +9,8 @@ import { FileBlobStore } from '@sealed-skill/storage';
 import { createJsonServer, fetchJson, loadOrCreateTeeIdentity, readJsonBody, sendJson, signByTee, toTeeRecord } from '@sealed-skill/tee-common';
 
 const port = Number(process.env.TEE_RUNTIME_PORT ?? 4103);
-const dataDir = process.env.DEMO_DATA_DIR ?? '../../data';
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const serviceUrl = process.env.TEE_RUNTIME_PUBLIC_URL ?? `http://localhost:${port}`;
 const brokerUrl = process.env.TEE_BROKER_URL ?? 'http://localhost:4101';
 const identity = await loadOrCreateTeeIdentity({ role: 'runtime', serviceName: 'tee-runtime', dataDir });
@@ -38,7 +41,7 @@ const server = createJsonServer(async (req, res) => {
     };
     if (!body.artifact) throw new Error('artifact required');
     if (!isAllowedPrompt(body.prompt)) throw new Error('Prompt blocked by runtime policy');
-    if (body.callerPublicKey !== body.currentOwnerPublicKey) throw new Error('caller is not current NFT owner');
+    if (body.callerPublicKey !== body.currentOwnerPublicKey) throw new Error('caller is not current NFTee owner');
     if (body.artifact.runtimePolicy.runtimeMeasurement !== identity.measurement) throw new Error('runtime measurement is not approved for artifact');
 
     const session = generateX25519KeyPair();

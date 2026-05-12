@@ -176,7 +176,7 @@ pub struct RevokeTee<'info> {
 pub struct RegisterArtifact<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
-    /// CHECK: Only stored as identity of the demo NFT mint.
+    /// CHECK: Only stored as identity of the demo NFTee mint.
     pub nft_mint: UncheckedAccount<'info>,
     #[account(init, payer = owner, space = 8 + ArtifactAccount::SIZE, seeds = [b"artifact", nft_mint.key().as_ref()], bump)]
     pub artifact: Account<'info, ArtifactAccount>,
@@ -189,7 +189,7 @@ pub struct RegisterMintedArtifact<'info> {
     pub admin: Signer<'info>,
     #[account(init_if_needed, payer = admin, space = 8 + ProtocolConfig::SIZE, seeds = [b"config"], bump)]
     pub config: Account<'info, ProtocolConfig>,
-    /// CHECK: Stored as identity of the Token-2022 NFT mint.
+    /// CHECK: Stored as identity of the Token-2022 NFTee mint.
     pub nft_mint: UncheckedAccount<'info>,
     #[account(init_if_needed, payer = admin, space = 8 + ArtifactAccount::SIZE, seeds = [b"artifact", nft_mint.key().as_ref()], bump)]
     pub artifact: Account<'info, ArtifactAccount>,
@@ -310,7 +310,7 @@ pub enum SealedSkillError {
     BrokerApprovalRequired,
     #[msg("Transfer hook requires the broker approval accounts")]
     MissingHookAccounts,
-    #[msg("Transfer amount must be exactly one NFT")]
+    #[msg("Transfer amount must be exactly one NFTee")]
     InvalidTransferAmount,
     #[msg("Wrong extra account metas account size")]
     WrongExtraAccountMetasSize,

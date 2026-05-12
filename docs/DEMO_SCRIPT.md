@@ -4,7 +4,7 @@ Use this when presenting the project.
 
 ## Opening
 
-“This is a Solana NFT that controls a secret generated inside a TEE-like service. The owner can use the secret, but cannot copy it.”
+“This is a Solana NFTee that controls a secret generated inside a TEE-like service. The owner can use the secret, but cannot copy it.”
 
 ## Step 1 — Register TEEs
 
@@ -24,7 +24,7 @@ Click the generate button.
 
 Say:
 
-“The creator chooses an animal, encrypts it, stores only ciphertext, and mints a Solana demo NFT to Wallet A.”
+“The creator chooses an animal, encrypts it, stores only ciphertext, and mints a Solana demo NFTee to Wallet A.”
 
 ## Step 3 — B fails
 
@@ -48,8 +48,8 @@ Click B asks runtime.
 
 Say:
 
-“Now Wallet B owns the NFT. The runtime asks the broker for a session key, decrypts the animal internally, and returns only the allowed output.”
+“Now Wallet B owns the NFTee. The runtime asks the broker for a session key, decrypts the animal internally, and returns only the allowed output.”
 
 ## Close
 
-“The NFT is not the secret. The NFT is a transferable control right over a secret that only approved runtimes can use.”
+“The NFTee is not the secret. The NFTee is a transferable control right over a secret that only approved runtimes can use.”

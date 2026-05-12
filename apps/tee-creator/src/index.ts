@@ -1,13 +1,16 @@
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: '../../.env' });
 import { randomInt } from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { encryptArtifactJson, generateSymmetricKey, randomHex, wrapSecretForPublicKey } from '@sealed-skill/crypto';
 import { hashJson, ANIMALS, nowIso, makeNonce, type ArtifactRecord, type CreationTranscript, type RuntimePolicy } from '@sealed-skill/protocol';
 import { FileBlobStore } from '@sealed-skill/storage';
 import { createJsonServer, loadOrCreateTeeIdentity, readJsonBody, sendJson, signByTee, toTeeRecord } from '@sealed-skill/tee-common';
 
 const port = Number(process.env.TEE_CREATOR_PORT ?? 4102);
-const dataDir = process.env.DEMO_DATA_DIR ?? '../../data';
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const serviceUrl = process.env.TEE_CREATOR_PUBLIC_URL ?? `http://localhost:${port}`;
 const identity = await loadOrCreateTeeIdentity({ role: 'creator', serviceName: 'tee-creator', dataDir });
 const store = new FileBlobStore(`${dataDir}/blobs`);

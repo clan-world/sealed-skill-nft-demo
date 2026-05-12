@@ -2,7 +2,7 @@
 
 ## Core idea
 
-The NFT holder owns a transferable control right.
+The NFTee holder owns a transferable control right.
 
 The holder does not receive:
 
@@ -50,7 +50,7 @@ flowchart TD
     TEE3 --> TEE1
 
     API --> Solana[(Solana devnet)]
-    Solana --> NFT[1-supply demo NFT token]
+    Solana --> NFTee[1-supply demo NFTee token]
 ```
 
 ## Creation flow
@@ -75,8 +75,8 @@ sequenceDiagram
     Creator->>Storage: Save encrypted blob
     Creator->>Creator: Wrap key to Broker TEE
     Creator->>API: Signed creation transcript
-    API->>Solana: Mint 1-supply demo NFT token to Wallet A
-    API->>UI: Artifact hash + NFT mint + hidden plaintext
+    API->>Solana: Mint 1-supply demo NFTee token to Wallet A
+    API->>UI: Artifact hash + NFTee mint + hidden plaintext
 ```
 
 ## Access flow
@@ -91,7 +91,7 @@ sequenceDiagram
     participant Solana as Solana devnet
 
     B->>API: Signed runtime request
-    API->>Solana: Check current NFT owner
+    API->>Solana: Check current NFTee owner
     API->>Runtime: Caller + artifact + prompt
     Runtime->>Broker: Request session key
     Broker->>Broker: Check caller is current owner
@@ -121,9 +121,9 @@ sequenceDiagram
     Broker->>API: Signed capsule
     API->>UI: Transfer ready
     UI->>Solana: Wallet A signs token transfer
-    Solana->>Solana: NFT owner changes to B
+    Solana->>Solana: NFTee owner changes to B
     UI->>API: Complete transfer with signature
-    API->>Solana: Verify B owns NFT
+    API->>Solana: Verify B owns NFTee
     API->>UI: Transfer complete
 ```
 
@@ -137,6 +137,6 @@ This repo models the correct shape:
 - every TEE has a measurement,
 - every TEE produces an attestation object,
 - every important action is signed,
-- and every transcript binds to the artifact, wallet, NFT, nonce, and epoch.
+- and every transcript binds to the artifact, wallet, NFTee, nonce, and epoch.
 
 The roadmap replaces mock attestation with Automata DCAP and zkVM-compressed attestation.

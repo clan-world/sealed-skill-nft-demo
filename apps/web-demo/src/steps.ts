@@ -19,7 +19,7 @@ export const creatorStepLabels = [
 
 export const brokerStepLabels = [
   'Receive transfer request',
-  'Check current owner of NFT is caller',
+  'Check current owner of NFTee is caller',
   'Unwrap artifact key inside Broker TEE',
   'Create owner-bound transfer capsule',
   'Bind capsule to recipient wallet and epoch',
@@ -29,7 +29,7 @@ export const brokerStepLabels = [
 
 export const runtimeStepLabels = [
   'Receive signed runtime request',
-  'Check caller owns NFT',
+  'Check caller owns NFTee',
   'Create short-lived runtime session key',
   'Ask Broker TEE for session-wrapped artifact key',
   'Fetch encrypted artifact',

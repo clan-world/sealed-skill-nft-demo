@@ -4,7 +4,7 @@
 
 ### Wallet B using the artifact before transfer
 
-TEE3 and the API check current NFT ownership before allowing runtime execution.
+TEE3 and the API check current NFTee ownership before allowing runtime execution.
 
 ### Wallet A using the artifact after transfer
 
@@ -24,7 +24,7 @@ TEE actions are signed. The registry tracks which TEE keys are approved.
 
 ### Replay of old requests
 
-Transcripts include nonce, expiry, artifact ID, NFT mint, owner, and epoch.
+Transcripts include nonce, expiry, artifact ID, NFTee mint, owner, and epoch.
 
 ## Does not protect against
 

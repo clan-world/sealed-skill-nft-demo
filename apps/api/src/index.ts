@@ -1,6 +1,7 @@
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: '../../.env' });
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import nacl from 'tweetnacl';
@@ -8,11 +9,12 @@ import { PublicKey, Transaction } from '@solana/web3.js';
 import { canonicalJson, hashJson, type ArtifactRecord, type SignedEnvelope, type TeeRecord } from '@sealed-skill/protocol';
 import { fetchJson } from '@sealed-skill/tee-common';
 import { mergeTee } from '@sealed-skill/demo-state';
-import { buildDemoNftTransferTx, getCurrentDemoNftOwner, getSealedSkillProgramId, loadOrCreateKeypair, makeConnection, mintOneSupplyDemoNft, recordBrokerTransferApproval } from '@sealed-skill/solana';
+import { buildDemoNftTransferTx, getCurrentDemoNftOwner, getSealedSkillProgramId, loadOrCreateKeypair, makeConnection, mintOneSupplyDemoNft, recordBrokerTransferApproval, syncRegisteredArtifactOwner } from '@sealed-skill/solana';
 import { StateStore } from './state.js';
 
 const port = Number(process.env.API_PORT ?? 8787);
-const dataDir = process.env.DEMO_DATA_DIR ?? '../../data';
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const solanaEnabled = (process.env.SOLANA_ENABLED ?? 'false') === 'true';
 const rpcUrl = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
 const backendKeypairPath = process.env.BACKEND_KEYPAIR_PATH ?? `${dataDir}/solana/backend-keypair.json`;
@@ -30,6 +32,10 @@ app.use(express.json({ limit: '2mb' }));
 const store = new StateStore(`${dataDir}/demo-state.json`);
 const connection = makeConnection(rpcUrl);
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function teeHealth(url: string): Promise<TeeRecord> {
   const result = await fetchJson<{ tee: TeeRecord }>(`${url}/health`);
   return result.tee;
@@ -46,6 +52,16 @@ async function resolveCurrentOwner(artifact: ArtifactRecord, stateOwner?: string
     return owner?.toBase58();
   }
   return stateOwner ?? artifact.ownerPublicKey;
+}
+
+async function waitForCurrentOwner(artifact: ArtifactRecord, expectedOwner: string, stateOwner?: string): Promise<string | undefined> {
+  let currentOwner: string | undefined;
+  for (let i = 0; i < 8; i += 1) {
+    currentOwner = await resolveCurrentOwner(artifact, stateOwner);
+    if (currentOwner === expectedOwner) return currentOwner;
+    await sleep(750);
+  }
+  return currentOwner;
 }
 
 function verifyRuntimeRequestSignature(input: {
@@ -72,9 +88,9 @@ app.get('/api/demo-state', async (_req, res) => {
 
 app.get('/api/nft/collection-metadata', (_req, res) => {
   res.json({
-    name: 'Sealed Skill Collection',
+    name: 'Vellum Sealed Skill Collection',
     symbol: 'SSKILL',
-    description: 'Demo collection for TEE-gated sealed skill NFTs on Solana devnet.',
+    description: 'Demo collection for TEE-gated sealed skill NFTees on Solana devnet.',
     image: `${publicBaseUrl}/api/nft/vellum-emblem.png`
   });
 });
@@ -97,9 +113,9 @@ app.get('/api/nft/metadata/:mint', async (req, res, next) => {
       return;
     }
     res.json({
-      name: `Sealed Skill #${artifact.artifactId.slice(0, 8)}`,
-      symbol: 'SSNFT',
-      description: 'A Token-2022 collectible NFT that gates a sealed TEE artifact. The animal stays hidden; approved runtime calls can use it.',
+      name: 'Vellum Sealed Skill NFTee',
+      symbol: 'NFTee',
+      description: 'A Token-2022 collectible NFTee that gates a sealed TEE artifact. The animal stays hidden; approved runtime calls can use it.',
       image: `${publicBaseUrl}/api/nft/image/${mint}.png`,
       external_url: publicBaseUrl,
       attributes: [
@@ -243,7 +259,7 @@ app.post('/api/artifacts/mint', async (_req, res, next) => {
       ...s,
       artifact: mintedArtifact,
       currentOwner: artifact.ownerPublicKey,
-      log: [`${new Date().toISOString()} NFT minted to ${artifact.ownerPublicKey}: ${nftMint}`, ...s.log]
+      log: [`${new Date().toISOString()} NFTee minted to ${artifact.ownerPublicKey}: ${nftMint}`, ...s.log]
     }));
 
     res.json({ state: nextState, nftMint, mintSignature });
@@ -267,11 +283,11 @@ app.post('/api/access/run', async (req, res, next) => {
     const state = await store.read();
     const artifact = requireArtifact(state);
     const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
-    if (!currentOwner) throw new Error('Cannot resolve current NFT owner');
+    if (!currentOwner) throw new Error('Cannot resolve current NFTee owner');
     if (currentOwner !== callerPublicKey) {
       res.status(403).json({
         ok: false,
-        reason: 'caller is not current NFT owner',
+        reason: 'caller is not current NFTee owner',
         callerPublicKey,
         currentOwner
       });
@@ -309,7 +325,7 @@ app.post('/api/transfer/prepare', async (req, res, next) => {
     const toPublicKey = String(req.body.toPublicKey ?? '');
     const state = await store.read();
     const artifact = requireArtifact(state);
-    if (!artifact.nftMint) throw new Error('artifact has no NFT mint');
+    if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
     const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
     if (currentOwner !== fromPublicKey) throw new Error(`fromPublicKey is not current owner. current=${currentOwner}`);
 
@@ -324,6 +340,16 @@ app.post('/api/transfer/prepare', async (req, res, next) => {
     let approvalPda = artifact.approvalPda;
     if (solanaEnabled) {
       const payer = await loadOrCreateKeypair(backendKeypairPath);
+      await syncRegisteredArtifactOwner({
+        connection,
+        payer,
+        mint: new PublicKey(artifact.nftMint),
+        owner: new PublicKey(currentOwner),
+        artifactId: artifact.artifactId,
+        encryptedBlobHash: artifact.encryptedBlob.sha256,
+        runtimePolicyHash: hashJson(artifact.runtimePolicy),
+        programId: sealedSkillProgramId
+      });
       const recorded = await recordBrokerTransferApproval({
         connection,
         payer,
@@ -356,8 +382,11 @@ app.post('/api/transfer/build', async (req, res, next) => {
     const toPublicKey = new PublicKey(String(req.body.toPublicKey ?? ''));
     const state = await store.read();
     const artifact = requireArtifact(state);
-    if (!artifact.nftMint) throw new Error('artifact has no NFT mint');
+    if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
     if (state.pendingTransferTo !== toPublicKey.toBase58()) throw new Error('No prepared transfer for this recipient');
+    if (state.transferTranscript?.payload.expiresAt && Date.now() >= Date.parse(state.transferTranscript.payload.expiresAt)) {
+      throw new Error('TEE1 transfer capsule expired. Run Prepare broker transfer again.');
+    }
     if (!solanaEnabled) {
       res.json({ mock: true, message: 'SOLANA_ENABLED=false; call /api/transfer/complete directly.' });
       return;
@@ -375,11 +404,16 @@ app.post('/api/transfer/complete', async (req, res, next) => {
     const signature = req.body.signature ? String(req.body.signature) : undefined;
     const state = await store.read();
     const artifact = requireArtifact(state);
-    if (!artifact.nftMint) throw new Error('artifact has no NFT mint');
+    if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
     if (state.pendingTransferTo !== toPublicKey) throw new Error('No prepared transfer for this recipient');
+    if (state.transferTranscript?.payload.expiresAt && Date.now() >= Date.parse(state.transferTranscript.payload.expiresAt)) {
+      throw new Error('TEE1 transfer capsule expired. Run Prepare broker transfer again.');
+    }
 
     if (solanaEnabled) {
-      const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
+      const currentOwner = signature
+        ? await waitForCurrentOwner(artifact, toPublicKey, state.currentOwner)
+        : await resolveCurrentOwner(artifact, state.currentOwner);
       if (currentOwner !== toPublicKey) throw new Error(`Solana owner is ${currentOwner}; expected ${toPublicKey}`);
     }
 
@@ -411,7 +445,7 @@ app.post('/api/ownership/check', async (req, res, next) => {
     const expectedOwner = String(req.body.expectedOwner ?? '');
     const state = await store.read();
     const artifact = requireArtifact(state);
-    if (!artifact.nftMint) throw new Error('artifact has no NFT mint');
+    if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
     const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
     const expectedOwnerOwnsNft = Boolean(expectedOwner && currentOwner === expectedOwner);
 
@@ -454,7 +488,7 @@ app.post('/api/tamper/wrong-owner', async (_req, res) => {
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? (error.message || error.name) : String(error);
   res.status(500).json({ ok: false, error: message });
 });
 

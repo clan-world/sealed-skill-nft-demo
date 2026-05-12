@@ -43,6 +43,10 @@ function solscanSearchUrl(value?: string): string | undefined {
   return value ? `https://solscan.io/search?q=${encodeURIComponent(value)}&cluster=devnet` : undefined;
 }
 
+function explorerTxUrl(signature: string): string {
+  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+}
+
 function assertPublicKey(value: string, label: string) {
   try {
     return new PublicKey(value).toBase58();
@@ -134,7 +138,7 @@ export function App() {
       await animate(creatorStepLabels, setCreatorSteps, async () => {
         const result = await api<{ state: DemoState; mintSignature?: string }>('/api/artifacts/generate', { ownerPublicKey: connectedPubkey });
         setState(result.state);
-        setSuccess('Sealed artifact created. Review the NFT mint payload in TEE2.');
+        setSuccess('Sealed artifact created. Review the NFTee mint payload in TEE2.');
       });
     });
   }
@@ -144,7 +148,7 @@ export function App() {
       const result = await api<{ state: DemoState; nftMint: string; mintSignature?: string }>('/api/artifacts/mint', {});
       setState(result.state);
       setMintModalOpen(false);
-      setSuccess(`NFT minted to ${state.artifact?.ownerPublicKey ?? 'the artifact owner'}: ${result.nftMint}`);
+      setSuccess(`NFTee minted to ${state.artifact?.ownerPublicKey ?? 'the artifact owner'}: ${result.nftMint}`);
     });
   }
 
@@ -171,9 +175,9 @@ export function App() {
       });
       const json = await res.json();
       if (res.status === 403) {
-        steps[1] = { label: 'Rejected: connected wallet is not current NFT owner', state: 'error' };
+        steps[1] = { label: 'Rejected: connected wallet is not current NFTee owner', state: 'error' };
         setRuntimeSteps([...steps]);
-        setSuccess('Access blocked: connected wallet is not the current NFT owner.');
+        setSuccess('Access blocked: connected wallet is not the current NFTee owner.');
         return;
       }
       if (!res.ok) throw new Error(json.error ?? json.reason ?? `Runtime request failed with HTTP ${res.status}`);
@@ -193,7 +197,7 @@ export function App() {
 
   async function prepareTransfer() {
     await runAction('prepare', async () => {
-      if (!connectedPubkey) throw new Error('Connect the current NFT owner first.');
+      if (!connectedPubkey) throw new Error('Connect the current NFTee owner first.');
       if (!recipient) {
         const steps = makeSteps(brokerStepLabels);
         setBrokerSteps([...steps]);
@@ -220,13 +224,14 @@ export function App() {
 
   async function completeTransfer() {
     await runAction('transfer', async () => {
-      if (!connectedPubkey || !wallet.publicKey) throw new Error('Connect the current NFT owner first.');
+      if (!connectedPubkey || !wallet.publicKey) throw new Error('Connect the current NFTee owner first.');
       const toPublicKey = assertPublicKey(preparedRecipient, 'Prepared recipient');
       const artifact = state.artifact;
       if (!artifact?.nftMint) throw new Error('Generate artifact first.');
       if (artifact.nftMint.startsWith('mock_')) {
         const completed = await api<{ state: DemoState }>('/api/transfer/complete', { toPublicKey });
         setState(completed.state);
+        setTransferModalOpen(false);
         setSuccess('Mock transfer completed. Enable SOLANA_ENABLED=true for devnet token transfer.');
         return;
       }
@@ -235,15 +240,18 @@ export function App() {
       if (!wallet.signTransaction) throw new Error('Connected wallet does not support transaction signing.');
       const signed = await wallet.signTransaction(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(sig, 'confirmed');
+      const confirmation = await connection.confirmTransaction(sig, 'confirmed');
+      if (confirmation.value.err) {
+        throw new Error(`Solana transfer failed on-chain: ${JSON.stringify(confirmation.value.err)} ${explorerTxUrl(sig)}`);
+      }
       const completed = await api<{ state: DemoState }>('/api/transfer/complete', { toPublicKey, signature: sig });
       setState(completed.state);
+      setTransferModalOpen(false);
       setSuccess(`Solana transfer complete: ${sig}`);
     });
   }
 
   async function confirmTransferFromModal() {
-    setTransferModalOpen(false);
     await completeTransfer();
   }
 
@@ -261,16 +269,18 @@ export function App() {
       }>('/api/ownership/check', { expectedOwner });
       setOwnershipResult(result);
       setState(result.state);
-      setSuccess(result.expectedOwnerOwnsNft ? 'Recipient owns the NFT. Runtime access is now enabled for that connected wallet.' : 'Recipient does not own the NFT yet.');
+      setSuccess(result.expectedOwnerOwnsNft ? 'Recipient owns the NFTee. Runtime access is now enabled for that connected wallet.' : 'Recipient does not own the NFTee yet.');
     });
   }
 
   const artifactHash = state.artifact?.encryptedBlob.sha256;
   const sealedKeyHash = state.artifact?.sealedKeyForBroker?.aadHash;
+  const transferExpiresAt = state.transferTranscript?.payload.expiresAt;
+  const transferExpired = Boolean(transferExpiresAt && Date.now() >= Date.parse(transferExpiresAt));
   const canMint = Boolean(state.artifact && state.artifact.status === 'created' && connectedPubkey);
-  const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && connectedPubkey);
+  const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && connectedPubkey && !transferExpired);
   const mintReview = {
-    solanaAction: 'create Token-2022 collectible mint, attach metadata/group/hook extensions, mint 1 token',
+    solanaAction: 'create Token-2022 collectible NFTee mint, attach metadata/group/hook extensions, mint 1 token',
     mintAuthority: 'backend devnet payer',
     recipientWallet: state.artifact?.ownerPublicKey,
     tokenProgram: state.artifact?.tokenProgram,
@@ -285,7 +295,7 @@ export function App() {
   };
   const transferReview = {
     solanaFunction: 'Token-2022 transferChecked with sealed-skill transfer hook',
-    nftMint: state.artifact?.nftMint,
+    nfteeMint: state.artifact?.nftMint,
     tokenProgram: state.artifact?.tokenProgram,
     transferHookProgram: state.artifact?.hookProgramId,
     artifactGatePda: state.artifact?.artifactPda,
@@ -296,7 +306,7 @@ export function App() {
     teeAuthorization: {
       kind: state.transferTranscript?.payload.kind,
       artifactId: state.transferTranscript?.payload.artifactId,
-      nftMint: state.transferTranscript?.payload.nftMint,
+      nfteeMint: state.transferTranscript?.payload.nftMint,
       fromOwner: state.transferTranscript?.payload.fromOwner,
       toOwner: state.transferTranscript?.payload.toOwner,
       epoch: state.transferTranscript?.payload.epoch,
@@ -312,8 +322,8 @@ export function App() {
       <header className="hero">
         <div>
           <p className="eyebrow">Solana + TEE-gated sealed data</p>
-          <h1>Sealed Skill NFT Demo</h1>
-          <p>The NFT controls a hidden animal artifact. Owners can use it through the runtime, but cannot read or copy the plaintext.</p>
+          <h1>Sealed Skill NFTee Demo</h1>
+          <p>The NFTee controls a hidden animal artifact. Owners can use it through the runtime, but cannot read or copy the plaintext.</p>
         </div>
         <WalletMultiButton />
       </header>
@@ -322,7 +332,7 @@ export function App() {
         <InfoCard label="Connected wallet" value={connectedPubkey ?? 'connect wallet'} />
         <InfoCard label="Transfer recipient" value={recipient || 'enter recipient wallet'} />
         <InfoCard label="Current owner" value={state.currentOwner} />
-        <InfoCard label="NFT mint" value={state.artifact?.nftMint} />
+        <InfoCard label="NFTee mint" value={state.artifact?.nftMint} />
         <InfoCard label="Token program" value={state.artifact?.tokenProgram} />
         <InfoCard label="Hook program" value={state.artifact?.hookProgramId} />
         <InfoCard label="Encrypted artifact hash" value={artifactHash ? shortHash(artifactHash, 18) : undefined} />
@@ -348,7 +358,7 @@ export function App() {
       </section>
 
       <section className="tee-grid">
-        <TeePanel title="NFT Transfer Key Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
+        <TeePanel title="NFTee Transfer Key Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
           <div className="tee-panel-actions recipient-transfer-row">
             <input
               aria-label="Transfer recipient wallet"
@@ -359,14 +369,14 @@ export function App() {
               disabled={busy !== 'none'}
             />
             {canTransfer && (
-              <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none'}>Transfer NFT</button>
+              <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none'}>Transfer NFTee</button>
             )}
           </div>
         </TeePanel>
         <TeePanel title="Scarce Artifact Creator" subtitle="Generates and encrypts a random animal, scarce artifact" accent="#13b981" chipLabel="TEE2" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 3: 'creator', 4: 'creator', 5: 'creator', 6: 'creator', 7: 'broker' }}>
           {canMint && (
             <div className="tee-panel-actions">
-              <button onClick={() => setMintModalOpen(true)} disabled={busy !== 'none'}>Mint NFT</button>
+              <button onClick={() => setMintModalOpen(true)} disabled={busy !== 'none'}>Mint NFTee</button>
             </div>
           )}
         </TeePanel>
@@ -378,8 +388,8 @@ export function App() {
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="mint-modal-title" onClick={(event) => event.stopPropagation()}>
             <div className="modal-heading">
               <div>
-                <p className="eyebrow">NFT mint payload</p>
-                <h2 id="mint-modal-title">Mint NFT</h2>
+                <p className="eyebrow">NFTee mint payload</p>
+                <h2 id="mint-modal-title">Mint NFTee</h2>
               </div>
               <button className="icon-button" onClick={() => setMintModalOpen(false)} aria-label="Close mint review">x</button>
             </div>
@@ -398,7 +408,7 @@ export function App() {
             <div className="modal-heading">
               <div>
                 <p className="eyebrow">Broker TEE authorization</p>
-                <h2 id="transfer-modal-title">Transfer NFT</h2>
+                <h2 id="transfer-modal-title">Transfer NFTee</h2>
               </div>
               <button className="icon-button" onClick={() => setTransferModalOpen(false)} aria-label="Close transfer review">x</button>
             </div>
@@ -425,11 +435,11 @@ export function App() {
               {busy === 'ownership'
                 ? 'Checking Solana devnet...'
                 : ownershipResult?.expectedOwnerOwnsNft
-                  ? 'Yes. The recipient owns this NFT.'
-                  : 'No. The recipient does not own this NFT yet.'}
+                  ? 'Yes. The recipient owns this NFTee.'
+                  : 'No. The recipient does not own this NFTee yet.'}
             </div>
             <pre className="modal-data">{JSON.stringify({
-              nftMint: ownershipResult?.nftMint ?? state.artifact?.nftMint,
+              nfteeMint: ownershipResult?.nftMint ?? state.artifact?.nftMint,
               recipient: ownershipResult?.expectedOwner ?? preparedRecipient,
               currentSolanaOwner: ownershipResult?.currentOwner,
               recipientOwnsNft: ownershipResult?.expectedOwnerOwnsNft ?? false

@@ -8,7 +8,7 @@ These are useful references for the design direction. The MVP does not depend on
 - Token Extensions Transfer Hook guide: https://solana.com/developers/guides/token-extensions/transfer-hook
 - Solana SPL Token JS package: https://www.npmjs.com/package/@solana/spl-token
 
-## NFT standards
+## NFTee Standards
 
 - Metaplex Core docs: https://www.metaplex.com/docs/smart-contracts/core
 - Metaplex Core plugins: https://www.metaplex.com/docs/smart-contracts/core/plugins

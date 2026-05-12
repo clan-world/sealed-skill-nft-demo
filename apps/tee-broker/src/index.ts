@@ -1,11 +1,14 @@
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: '../../.env' });
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hashJson, addMinutesIso, isExpired, makeNonce, type AccessCapsule, type ArtifactRecord, type TransferTranscript } from '@sealed-skill/protocol';
 import { randomHex, unwrapSecretWithPrivateKey, wrapSecretForPublicKey } from '@sealed-skill/crypto';
 import { createJsonServer, loadOrCreateTeeIdentity, readJsonBody, sendJson, signByTee, toTeeRecord } from '@sealed-skill/tee-common';
 
 const port = Number(process.env.TEE_BROKER_PORT ?? 4101);
-const dataDir = process.env.DEMO_DATA_DIR ?? '../../data';
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const serviceUrl = process.env.TEE_BROKER_PUBLIC_URL ?? `http://localhost:${port}`;
 const identity = await loadOrCreateTeeIdentity({ role: 'broker', serviceName: 'tee-broker', dataDir });
 
