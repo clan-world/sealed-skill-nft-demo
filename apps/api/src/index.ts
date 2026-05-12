@@ -298,6 +298,49 @@ app.post('/api/transfer/complete', async (req, res, next) => {
   }
 });
 
+app.post('/api/ownership/check', async (req, res, next) => {
+  try {
+    const expectedOwner = String(req.body.expectedOwner ?? '');
+    const state = await store.read();
+    const artifact = requireArtifact(state);
+    if (!artifact.nftMint) throw new Error('artifact has no NFT mint');
+    const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
+    const expectedOwnerOwnsNft = Boolean(expectedOwner && currentOwner === expectedOwner);
+
+    let nextState = state;
+    if (expectedOwnerOwnsNft && state.pendingTransferTo === expectedOwner && artifact.status !== 'transferred') {
+      const nextArtifact: ArtifactRecord = {
+        ...artifact,
+        ownerPublicKey: expectedOwner,
+        epoch: artifact.epoch + 1,
+        status: 'transferred'
+      };
+      nextState = await store.update((s) => {
+        const updated = {
+          ...s,
+          artifact: nextArtifact,
+          currentOwner: expectedOwner,
+          log: [`${new Date().toISOString()} Solana owner check confirmed transfer to ${expectedOwner}`, ...s.log]
+        };
+        delete updated.pendingTransferTo;
+        delete updated.lastRuntimeResult;
+        return updated;
+      });
+    }
+
+    res.json({
+      ok: true,
+      nftMint: artifact.nftMint,
+      expectedOwner,
+      currentOwner,
+      expectedOwnerOwnsNft,
+      state: nextState
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/tamper/wrong-owner', async (_req, res) => {
   res.json({ ok: false, reason: 'This endpoint is a UI hook for the tamper demo. Use Wallet B before transfer.' });
 });

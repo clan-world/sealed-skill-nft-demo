@@ -8,7 +8,7 @@ import { api } from './api.js';
 import { InfoCard, StatusPill, TeePanel } from './components.js';
 import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, type VisualStep } from './steps.js';
 
-type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'b-fail' | 'prepare' | 'transfer' | 'b-run';
+type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'b-fail' | 'prepare' | 'ownership' | 'transfer' | 'b-run';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,6 +61,13 @@ export function App() {
   const [runtimeSteps, setRuntimeSteps] = useState(makeSteps(runtimeStepLabels));
   const [mintModalOpen, setMintModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [ownershipModalOpen, setOwnershipModalOpen] = useState(false);
+  const [ownershipResult, setOwnershipResult] = useState<{
+    nftMint: string;
+    expectedOwner: string;
+    currentOwner?: string;
+    expectedOwnerOwnsNft: boolean;
+  } | null>(null);
   const [walletB] = useState(() => Keypair.generate());
 
   const walletAPubkey = wallet.publicKey?.toBase58();
@@ -104,6 +111,8 @@ export function App() {
       setRuntimeSteps(makeSteps(runtimeStepLabels));
       setMintModalOpen(false);
       setTransferModalOpen(false);
+      setOwnershipModalOpen(false);
+      setOwnershipResult(null);
       setSuccess('Demo reset.');
     });
   }
@@ -195,6 +204,23 @@ export function App() {
     await completeTransfer();
   }
 
+  async function checkWalletBOwnership() {
+    setOwnershipModalOpen(true);
+    setOwnershipResult(null);
+    await runAction('ownership', async () => {
+      const result = await api<{
+        nftMint: string;
+        expectedOwner: string;
+        currentOwner?: string;
+        expectedOwnerOwnsNft: boolean;
+        state: DemoState;
+      }>('/api/ownership/check', { expectedOwner: walletBPubkey });
+      setOwnershipResult(result);
+      setState(result.state);
+      setSuccess(result.expectedOwnerOwnsNft ? 'Wallet B owns the NFT. Runtime access is now enabled.' : 'Wallet B does not own the NFT yet.');
+    });
+  }
+
   async function walletBRunAfterTransfer() {
     await runAction('b-run', async () => {
       await animate(runtimeStepLabels, setRuntimeSteps, async () => {
@@ -273,7 +299,7 @@ export function App() {
         <button onClick={generateArtifact} disabled={busy !== 'none' || !walletAPubkey}>2. Generate sealed animal artifact</button>
         <button onClick={walletBTryBeforeTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint}>3. Confirm Wallet B is blocked</button>
         <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !walletAPubkey}>4. Prepare transfer A → B</button>
-        <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none' || !canTransfer}>5. Review NFT transfer</button>
+        <button onClick={checkWalletBOwnership} disabled={busy !== 'none' || !state.artifact?.nftMint}>5. Check Wallet B ownership</button>
         <button onClick={walletBRunAfterTransfer} disabled={busy !== 'none' || state.currentOwner !== walletBPubkey}>6. Wallet B asks runtime</button>
       </section>
 
@@ -334,6 +360,37 @@ export function App() {
             <div className="modal-actions">
               <button className="reset-button" onClick={() => setTransferModalOpen(false)} disabled={busy !== 'none'}>Cancel</button>
               <button onClick={confirmTransferFromModal} disabled={busy !== 'none' || !canTransfer}>Transfer</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {ownershipModalOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setOwnershipModalOpen(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="ownership-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Solana devnet owner check</p>
+                <h2 id="ownership-modal-title">Wallet B Ownership</h2>
+              </div>
+              <button className="icon-button" onClick={() => setOwnershipModalOpen(false)} aria-label="Close ownership check">x</button>
+            </div>
+            <div className={`ownership-result ${ownershipResult?.expectedOwnerOwnsNft ? 'ok' : 'warn'}`}>
+              {busy === 'ownership'
+                ? 'Checking Solana devnet...'
+                : ownershipResult?.expectedOwnerOwnsNft
+                  ? 'Yes. Wallet B owns this NFT.'
+                  : 'No. Wallet B does not own this NFT yet.'}
+            </div>
+            <pre className="modal-data">{JSON.stringify({
+              nftMint: ownershipResult?.nftMint ?? state.artifact?.nftMint,
+              walletB: walletBPubkey,
+              currentSolanaOwner: ownershipResult?.currentOwner,
+              walletBOwnsNft: ownershipResult?.expectedOwnerOwnsNft ?? false
+            }, null, 2)}</pre>
+            <div className="modal-actions">
+              <button onClick={checkWalletBOwnership} disabled={busy !== 'none'}>Check again</button>
+              <button className="reset-button" onClick={() => setOwnershipModalOpen(false)} disabled={busy !== 'none'}>Close</button>
             </div>
           </section>
         </div>
