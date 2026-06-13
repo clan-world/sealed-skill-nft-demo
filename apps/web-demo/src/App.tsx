@@ -295,7 +295,7 @@ export function App() {
       if (!artifact?.nftMint) throw new Error('Generate artifact first.');
       if (artifact.transferPolicy !== 'open') throw new Error('This NFTee is not in open transfer mode.');
       if (artifact.nftMint.startsWith('mock_')) {
-        const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { toPublicKey });
+        const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { fromPublicKey: connectedPubkey, toPublicKey });
         setState(completed.state);
         setSuccess('Normal mock transfer complete. Runtime access will now follow the new owner.');
         return;
@@ -309,7 +309,7 @@ export function App() {
       if (confirmation.value.err) {
         throw new Error(`Solana transfer failed on-chain: ${JSON.stringify(confirmation.value.err)} ${explorerTxUrl(sig)}`);
       }
-      const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { toPublicKey, signature: sig });
+      const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { fromPublicKey: connectedPubkey, toPublicKey, signature: sig });
       setState(completed.state);
       setSuccess(`Normal Solana transfer complete: ${sig}`);
     });
