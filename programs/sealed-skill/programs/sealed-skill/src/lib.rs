@@ -125,6 +125,15 @@ pub mod sealed_skill {
         Ok(())
     }
 
+    pub fn initialize_transfer_policy(ctx: Context<InitializeTransferPolicy>, mode: u8) -> Result<()> {
+        require_keys_eq!(ctx.accounts.config.admin, ctx.accounts.admin.key(), SealedSkillError::NotAdmin);
+        let policy = &mut ctx.accounts.transfer_policy;
+        policy.nft_mint = ctx.accounts.nft_mint.key();
+        policy.mode = TransferMode::try_from(mode)?;
+        policy.bump = ctx.bumps.transfer_policy;
+        Ok(())
+    }
+
     pub fn consume_transfer_approval(ctx: Context<ConsumeTransferApproval>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         require!(!ctx.accounts.approval.consumed, SealedSkillError::ApprovalConsumed);
@@ -236,6 +245,19 @@ pub struct InitializeExtraAccountMetas<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeTransferPolicy<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, ProtocolConfig>,
+    /// CHECK: Stored in the policy and compared in the transfer hook.
+    pub nft_mint: UncheckedAccount<'info>,
+    #[account(init_if_needed, payer = admin, space = 8 + TransferPolicyAccount::SIZE, seeds = [b"transfer-policy", nft_mint.key().as_ref()], bump)]
+    pub transfer_policy: Account<'info, TransferPolicyAccount>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct ConsumeTransferApproval<'info> {
     pub new_owner: Signer<'info>,
     #[account(mut)]
@@ -288,6 +310,29 @@ pub struct TransferApproval {
 }
 impl TransferApproval { pub const SIZE: usize = 32 + 32 + 32 + 32 + 8 + 8 + 32 + 8 + 1 + 1; }
 
+#[account]
+pub struct TransferPolicyAccount {
+    pub nft_mint: Pubkey,
+    pub mode: TransferMode,
+    pub bump: u8,
+}
+impl TransferPolicyAccount { pub const SIZE: usize = 32 + 1 + 1; }
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum TransferMode { BrokerGated, Open }
+
+impl TryFrom<u8> for TransferMode {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self> {
+        match value {
+            0 => Ok(TransferMode::BrokerGated),
+            1 => Ok(TransferMode::Open),
+            _ => err!(SealedSkillError::InvalidTransferPolicy),
+        }
+    }
+}
+
 #[error_code]
 pub enum SealedSkillError {
     #[msg("Only protocol admin can do this in the MVP scaffold")]
@@ -314,6 +359,8 @@ pub enum SealedSkillError {
     InvalidTransferAmount,
     #[msg("Wrong extra account metas account size")]
     WrongExtraAccountMetasSize,
+    #[msg("Invalid transfer policy")]
+    InvalidTransferPolicy,
     #[msg("Overflow")]
     Overflow,
 }
@@ -342,7 +389,7 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
     let authority_info = next_account_info(account_iter)?;
     let _validation_info = next_account_info(account_iter)?;
     let artifact_info = next_account_info(account_iter)?;
-    let approval_info = next_account_info(account_iter)?;
+    let policy_or_approval_info = next_account_info(account_iter)?;
 
     let source_data = source_info.try_borrow_data()?;
     let destination_data = destination_info.try_borrow_data()?;
@@ -354,13 +401,47 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
         let mut slice: &[u8] = &data;
         ArtifactAccount::try_deserialize(&mut slice).map_err(|_| ProgramError::InvalidAccountData)?
     };
+
+    if artifact.nft_mint != *mint_info.key {
+        return Err(error!(SealedSkillError::WrongMint).into());
+    }
+
+    let policy = {
+        let data = policy_or_approval_info.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        TransferPolicyAccount::try_deserialize(&mut slice).ok()
+    };
+    let has_policy_account = policy.is_some();
+
+    if let Some(policy) = policy {
+        if policy.nft_mint != *mint_info.key {
+            return Err(error!(SealedSkillError::WrongMint).into());
+        }
+        if policy.mode == TransferMode::Open {
+            if source.owner != artifact.owner || source.owner != *authority_info.key {
+                return Err(error!(SealedSkillError::WrongCurrentOwner).into());
+            }
+            artifact.owner = destination.owner;
+            artifact.epoch = artifact.epoch.checked_add(1).ok_or(error!(SealedSkillError::Overflow))?;
+            let mut data = artifact_info.try_borrow_mut_data()?;
+            let mut writer = &mut data[..];
+            artifact.try_serialize(&mut writer)?;
+            return Ok(());
+        }
+    }
+
+    let approval_info = if has_policy_account {
+        next_account_info(account_iter)?
+    } else {
+        policy_or_approval_info
+    };
     let mut approval = {
         let data = approval_info.try_borrow_data()?;
         let mut slice: &[u8] = &data;
         TransferApproval::try_deserialize(&mut slice).map_err(|_| ProgramError::InvalidAccountData)?
     };
 
-    if artifact.nft_mint != *mint_info.key || approval.nft_mint != *mint_info.key {
+    if approval.nft_mint != *mint_info.key {
         return Err(error!(SealedSkillError::WrongMint).into());
     }
     if approval.artifact != *artifact_info.key {

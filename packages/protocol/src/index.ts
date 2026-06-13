@@ -3,6 +3,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 export type TeeRole = 'broker' | 'creator' | 'runtime';
 export type AttestationMode = 'mock' | 'automata-dcap' | 'zk-compressed-dcap';
+export type TransferPolicy = 'broker-gated' | 'open';
 
 export interface TeeRecord {
   role: TeeRole;
@@ -58,6 +59,8 @@ export interface ArtifactRecord {
   hookProgramId?: string;
   artifactPda?: string;
   approvalPda?: string;
+  transferPolicyPda?: string;
+  transferPolicy: TransferPolicy;
   encryptedBlob: EncryptedBlobRef;
   sealedKeyForBroker: WrappedSecret;
   runtimePolicy: RuntimePolicy;

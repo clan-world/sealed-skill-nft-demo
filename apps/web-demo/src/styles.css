@@ -12,6 +12,9 @@ main { max-width: 1440px; margin: 0 auto; padding: 28px; }
 .hero h1 { font-size: 44px; margin: 0; letter-spacing: -0.04em; }
 .hero p { max-width: 760px; color: #b9c1d9; line-height: 1.5; }
 .eyebrow { color: #7dd3fc !important; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; font-weight: 800; }
+.page-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
+.page-tabs button { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); box-shadow: none; }
+.page-tabs button.active { background: #3346ff; border-color: rgba(147,197,253,0.48); box-shadow: 0 8px 30px rgba(51,70,255,0.28); }
 .wallet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
 .info-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 14px; min-height: 82px; }
 .info-card span { display: block; color: #95a0bb; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
