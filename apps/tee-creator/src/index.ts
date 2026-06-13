@@ -4,7 +4,7 @@ import { randomInt } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encryptArtifactJson, generateSymmetricKey, randomHex, wrapSecretForPublicKey } from '@sealed-skill/crypto';
-import { hashJson, ANIMALS, nowIso, makeNonce, type ArtifactRecord, type CreationTranscript, type RuntimePolicy } from '@sealed-skill/protocol';
+import { hashJson, ANIMALS, nowIso, makeNonce, type ArtifactRecord, type CreationTranscript, type RuntimePolicy, type TransferPolicy } from '@sealed-skill/protocol';
 import { FileBlobStore } from '@sealed-skill/storage';
 import { createJsonServer, loadOrCreateTeeIdentity, readJsonBody, sendJson, signByTee, toTeeRecord } from '@sealed-skill/tee-common';
 
@@ -30,11 +30,13 @@ const server = createJsonServer(async (req, res) => {
       runtimeMeasurement: string;
       runtimeSignPublicKeyPem: string;
       prompt?: string;
+      transferPolicy?: TransferPolicy;
     };
     if (!body.ownerPublicKey) throw new Error('ownerPublicKey required');
     if (!body.brokerWrapPublicKeyPem) throw new Error('brokerWrapPublicKeyPem required');
 
     const animal = ANIMALS[randomInt(0, ANIMALS.length)]!;
+    const transferPolicy: TransferPolicy = body.transferPolicy === 'open' ? 'open' : 'broker-gated';
     const artifactId = `artifact_${randomHex(8)}`;
     const secretTrait = `trait_${randomHex(4)}`;
     const artifact = {
@@ -75,6 +77,7 @@ const server = createJsonServer(async (req, res) => {
       encryptedBlob: encrypted.ref,
       sealedKeyForBroker,
       runtimePolicy,
+      transferPolicy,
       epoch: 1,
       status: 'created'
     };

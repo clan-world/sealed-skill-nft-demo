@@ -6,10 +6,10 @@ import express from 'express';
 import cors from 'cors';
 import nacl from 'tweetnacl';
 import { PublicKey, Transaction } from '@solana/web3.js';
-import { canonicalJson, hashJson, type ArtifactRecord, type SignedEnvelope, type TeeRecord } from '@sealed-skill/protocol';
+import { canonicalJson, hashJson, type ArtifactRecord, type SignedEnvelope, type TeeRecord, type TransferPolicy } from '@sealed-skill/protocol';
 import { fetchJson } from '@sealed-skill/tee-common';
 import { mergeTee } from '@sealed-skill/demo-state';
-import { buildDemoNftTransferTx, getCurrentDemoNftOwner, getSealedSkillProgramId, loadOrCreateKeypair, makeConnection, mintOneSupplyDemoNft, recordBrokerTransferApproval, syncRegisteredArtifactOwner } from '@sealed-skill/solana';
+import { buildDemoNftTransferTx, buildOpenDemoNftTransferTx, getCurrentDemoNftOwner, getSealedSkillProgramId, loadOrCreateKeypair, makeConnection, mintOneSupplyDemoNft, recordBrokerTransferApproval, syncRegisteredArtifactOwner } from '@sealed-skill/solana';
 import { StateStore } from './state.js';
 
 const port = Number(process.env.API_PORT ?? 8787);
@@ -62,6 +62,10 @@ async function waitForCurrentOwner(artifact: ArtifactRecord, expectedOwner: stri
     await sleep(750);
   }
   return currentOwner;
+}
+
+function normalizeTransferPolicy(value: unknown): TransferPolicy {
+  return value === 'open' ? 'open' : 'broker-gated';
 }
 
 function verifyRuntimeRequestSignature(input: {
@@ -121,7 +125,7 @@ app.get('/api/nft/metadata/:mint', async (req, res, next) => {
       attributes: [
         { trait_type: 'Artifact status', value: artifact.status },
         { trait_type: 'Epoch', value: String(artifact.epoch) },
-        { trait_type: 'Transfer gate', value: 'TEE1 broker hook' },
+        { trait_type: 'Transfer policy', value: artifact.transferPolicy === 'open' ? 'Open transfer + use-time auth' : 'TEE1 broker hook' },
         { trait_type: 'Encrypted artifact hash', value: artifact.encryptedBlob.sha256 }
       ],
       properties: {
@@ -172,6 +176,7 @@ app.post('/api/tees/register', async (_req, res) => {
 app.post('/api/artifacts/generate', async (req, res, next) => {
   try {
     const ownerPublicKey = String(req.body.ownerPublicKey ?? '');
+    const transferPolicy = normalizeTransferPolicy(req.body.transferPolicy);
     if (!ownerPublicKey) throw new Error('ownerPublicKey required');
 
     const state = await store.read();
@@ -189,11 +194,12 @@ app.post('/api/artifacts/generate', async (req, res, next) => {
         brokerWrapPublicKeyPem: broker.wrapPublicKeyPem,
         runtimeMeasurement: runtime.measurement,
         runtimeSignPublicKeyPem: runtime.signPublicKeyPem,
-        prompt: 'choose the name of a random animal'
+        prompt: 'choose the name of a random animal',
+        transferPolicy
       })
     });
 
-    const artifact: ArtifactRecord = { ...created.artifact, status: 'created' };
+    const artifact: ArtifactRecord = { ...created.artifact, transferPolicy, status: 'created' };
     const next = await store.update((s) => {
       const nextState = {
         ...s,
@@ -235,6 +241,7 @@ app.post('/api/artifacts/mint', async (_req, res, next) => {
         collectionStatePath,
         metadataBaseUrl: publicBaseUrl,
         hookProgramId: sealedSkillProgramId,
+        transferPolicy: artifact.transferPolicy,
         artifactId: artifact.artifactId,
         encryptedBlobHash: artifact.encryptedBlob.sha256,
         runtimePolicyHash: hashJson(artifact.runtimePolicy)
@@ -247,6 +254,7 @@ app.post('/api/artifacts/mint', async (_req, res, next) => {
       artifact.hookProgramId = minted.hookProgramId.toBase58();
       artifact.artifactPda = minted.artifactPda.toBase58();
       artifact.approvalPda = minted.approvalPda.toBase58();
+      artifact.transferPolicyPda = minted.transferPolicyPda.toBase58();
     } else {
       nftMint = `mock_mint_${artifact.artifactId}`;
       artifact.tokenProgram = 'mock-token-2022';
@@ -326,6 +334,7 @@ app.post('/api/transfer/prepare', async (req, res, next) => {
     const state = await store.read();
     const artifact = requireArtifact(state);
     if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
+    if (artifact.transferPolicy === 'open') throw new Error('open-transfer artifacts do not need broker preparation');
     const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
     if (currentOwner !== fromPublicKey) throw new Error(`fromPublicKey is not current owner. current=${currentOwner}`);
 
@@ -376,6 +385,68 @@ app.post('/api/transfer/prepare', async (req, res, next) => {
   }
 });
 
+
+app.post('/api/transfer/open/build', async (req, res, next) => {
+  try {
+    const fromPublicKey = new PublicKey(String(req.body.fromPublicKey ?? ''));
+    const toPublicKey = new PublicKey(String(req.body.toPublicKey ?? ''));
+    const state = await store.read();
+    const artifact = requireArtifact(state);
+    if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
+    if (artifact.transferPolicy !== 'open') throw new Error('artifact is not configured for open transfer');
+    const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
+    if (currentOwner !== fromPublicKey.toBase58()) throw new Error(`fromPublicKey is not current owner. current=${currentOwner}`);
+    if (!solanaEnabled) {
+      res.json({ mock: true, message: 'SOLANA_ENABLED=false; call /api/transfer/open/complete directly.' });
+      return;
+    }
+    const tx = await buildOpenDemoNftTransferTx({ connection, mint: new PublicKey(artifact.nftMint), fromOwner: fromPublicKey, toOwner: toPublicKey, hookProgramId: sealedSkillProgramId });
+    res.json({ txBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64') });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/transfer/open/complete', async (req, res, next) => {
+  try {
+    const toPublicKey = String(req.body.toPublicKey ?? '');
+    const signature = req.body.signature ? String(req.body.signature) : undefined;
+    const state = await store.read();
+    const artifact = requireArtifact(state);
+    if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
+    if (artifact.transferPolicy !== 'open') throw new Error('artifact is not configured for open transfer');
+
+    if (solanaEnabled) {
+      const currentOwner = signature
+        ? await waitForCurrentOwner(artifact, toPublicKey, state.currentOwner)
+        : await resolveCurrentOwner(artifact, state.currentOwner);
+      if (currentOwner !== toPublicKey) throw new Error(`Solana owner is ${currentOwner}; expected ${toPublicKey}`);
+    }
+
+    const nextArtifact: ArtifactRecord = {
+      ...artifact,
+      ownerPublicKey: toPublicKey,
+      epoch: artifact.epoch + 1,
+      status: 'transferred'
+    };
+    const nextState = await store.update((s) => {
+      const updated = {
+        ...s,
+        artifact: nextArtifact,
+        currentOwner: toPublicKey,
+        log: [`${new Date().toISOString()} Open transfer completed to ${toPublicKey}${signature ? ` tx=${signature}` : ''}`, ...s.log]
+      };
+      delete updated.transferTranscript;
+      delete updated.pendingTransferTo;
+      delete updated.lastRuntimeResult;
+      return updated;
+    });
+    res.json({ ok: true, state: nextState });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/transfer/build', async (req, res, next) => {
   try {
     const fromPublicKey = new PublicKey(String(req.body.fromPublicKey ?? ''));
@@ -383,6 +454,7 @@ app.post('/api/transfer/build', async (req, res, next) => {
     const state = await store.read();
     const artifact = requireArtifact(state);
     if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
+    if (artifact.transferPolicy === 'open') throw new Error('use /api/transfer/open/build for open-transfer artifacts');
     if (state.pendingTransferTo !== toPublicKey.toBase58()) throw new Error('No prepared transfer for this recipient');
     if (state.transferTranscript?.payload.expiresAt && Date.now() >= Date.parse(state.transferTranscript.payload.expiresAt)) {
       throw new Error('TEE1 transfer capsule expired. Run Prepare broker transfer again.');
@@ -405,6 +477,7 @@ app.post('/api/transfer/complete', async (req, res, next) => {
     const state = await store.read();
     const artifact = requireArtifact(state);
     if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
+    if (artifact.transferPolicy === 'open') throw new Error('use /api/transfer/open/complete for open-transfer artifacts');
     if (state.pendingTransferTo !== toPublicKey) throw new Error('No prepared transfer for this recipient');
     if (state.transferTranscript?.payload.expiresAt && Date.now() >= Date.parse(state.transferTranscript.payload.expiresAt)) {
       throw new Error('TEE1 transfer capsule expired. Run Prepare broker transfer again.');
