@@ -412,6 +412,8 @@ app.post('/api/transfer/open/complete', async (req, res, next) => {
     const fromPublicKey = req.body.fromPublicKey ? String(req.body.fromPublicKey) : undefined;
     const toPublicKey = String(req.body.toPublicKey ?? '');
     const signature = req.body.signature ? String(req.body.signature) : undefined;
+    const message = req.body.message;
+    const signatureB64 = req.body.signatureB64 ? String(req.body.signatureB64) : undefined;
     const state = await store.read();
     const artifact = requireArtifact(state);
     if (!artifact.nftMint) throw new Error('artifact has no NFTee mint');
@@ -427,6 +429,28 @@ app.post('/api/transfer/open/complete', async (req, res, next) => {
       const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
       if (currentOwner !== fromPublicKey) throw new Error(`fromPublicKey is not current owner. current=${currentOwner}`);
       if (fromPublicKey === toPublicKey) throw new Error('toPublicKey must differ from current owner');
+      if (!message || typeof message !== 'object') throw new Error('signed transfer message required for mock open transfer');
+      const transferMessage = message as {
+        kind?: unknown;
+        artifactId?: unknown;
+        nftMint?: unknown;
+        fromPublicKey?: unknown;
+        toPublicKey?: unknown;
+        epoch?: unknown;
+      };
+      if (
+        transferMessage.kind !== 'open-transfer' ||
+        transferMessage.artifactId !== artifact.artifactId ||
+        transferMessage.nftMint !== artifact.nftMint ||
+        transferMessage.fromPublicKey !== fromPublicKey ||
+        transferMessage.toPublicKey !== toPublicKey ||
+        transferMessage.epoch !== artifact.epoch
+      ) {
+        throw new Error('signed transfer message does not match current artifact transfer');
+      }
+      if (!signatureB64 || !verifyRuntimeRequestSignature({ callerPublicKey: fromPublicKey, signatureB64, message })) {
+        throw new Error('invalid mock open transfer owner signature');
+      }
     }
 
     const nextArtifact: ArtifactRecord = {

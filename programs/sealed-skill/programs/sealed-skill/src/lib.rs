@@ -409,6 +409,10 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
     if *policy_or_approval_info.key != expected_policy && *policy_or_approval_info.key != expected_approval {
         return Err(error!(SealedSkillError::InvalidHookAccount).into());
     }
+    let token_2022_program = spl_token_2022::id();
+    if *source_info.owner != token_2022_program || *destination_info.owner != token_2022_program || *mint_info.owner != token_2022_program {
+        return Err(error!(SealedSkillError::InvalidTransferContext).into());
+    }
 
     let source_data = source_info.try_borrow_data()?;
     let destination_data = destination_info.try_borrow_data()?;
