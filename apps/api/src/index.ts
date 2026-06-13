@@ -409,6 +409,7 @@ app.post('/api/transfer/open/build', async (req, res, next) => {
 
 app.post('/api/transfer/open/complete', async (req, res, next) => {
   try {
+    const fromPublicKey = req.body.fromPublicKey ? String(req.body.fromPublicKey) : undefined;
     const toPublicKey = String(req.body.toPublicKey ?? '');
     const signature = req.body.signature ? String(req.body.signature) : undefined;
     const state = await store.read();
@@ -421,6 +422,11 @@ app.post('/api/transfer/open/complete', async (req, res, next) => {
         ? await waitForCurrentOwner(artifact, toPublicKey, state.currentOwner)
         : await resolveCurrentOwner(artifact, state.currentOwner);
       if (currentOwner !== toPublicKey) throw new Error(`Solana owner is ${currentOwner}; expected ${toPublicKey}`);
+    } else {
+      if (!fromPublicKey) throw new Error('fromPublicKey required for mock open transfer');
+      const currentOwner = await resolveCurrentOwner(artifact, state.currentOwner);
+      if (currentOwner !== fromPublicKey) throw new Error(`fromPublicKey is not current owner. current=${currentOwner}`);
+      if (fromPublicKey === toPublicKey) throw new Error('toPublicKey must differ from current owner');
     }
 
     const nextArtifact: ArtifactRecord = {

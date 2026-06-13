@@ -534,7 +534,16 @@ function createInitializeExtraAccountMetasInstruction(input: {
   transferPolicy: PublicKey;
   approval?: PublicKey;
 }): TransactionInstruction {
-  const metas = input.approval ? [input.artifact, input.transferPolicy, input.approval] : [input.artifact, input.transferPolicy];
+  const metas = input.approval
+    ? [
+      { pubkey: input.artifact, isWritable: true },
+      { pubkey: input.transferPolicy, isWritable: false },
+      { pubkey: input.approval, isWritable: true }
+    ]
+    : [
+      { pubkey: input.artifact, isWritable: true },
+      { pubkey: input.transferPolicy, isWritable: false }
+    ];
   const data = encodeExtraAccountMetas(metas);
   const len = Buffer.alloc(4);
   len.writeUInt32LE(data.length);
@@ -554,7 +563,7 @@ function createInitializeExtraAccountMetasInstruction(input: {
   });
 }
 
-function encodeExtraAccountMetas(accounts: PublicKey[]): Buffer {
+function encodeExtraAccountMetas(accounts: Array<{ pubkey: PublicKey; isWritable: boolean }>): Buffer {
   const accountData = {
     instructionDiscriminator: 1902484195463472489n,
     length: 4 + accounts.length * 35,
@@ -562,9 +571,9 @@ function encodeExtraAccountMetas(accounts: PublicKey[]): Buffer {
       count: accounts.length,
       extraAccounts: accounts.map((account) => ({
         discriminator: 0,
-        addressConfig: account.toBuffer(),
+        addressConfig: account.pubkey.toBuffer(),
         isSigner: false,
-        isWritable: true
+        isWritable: account.isWritable
       }))
     }
   };
