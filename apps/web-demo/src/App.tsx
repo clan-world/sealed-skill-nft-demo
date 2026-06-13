@@ -295,7 +295,17 @@ export function App() {
       if (!artifact?.nftMint) throw new Error('Generate artifact first.');
       if (artifact.transferPolicy !== 'open') throw new Error('This NFTee is not in open transfer mode.');
       if (artifact.nftMint.startsWith('mock_')) {
-        const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { fromPublicKey: connectedPubkey, toPublicKey });
+        const message = {
+          kind: 'open-transfer',
+          artifactId: artifact.artifactId,
+          nftMint: artifact.nftMint,
+          fromPublicKey: connectedPubkey,
+          toPublicKey,
+          epoch: artifact.epoch,
+          nonce: makeNonce('web-open-transfer')
+        };
+        const signatureB64 = await signWithConnectedWallet(message);
+        const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { fromPublicKey: connectedPubkey, toPublicKey, message, signatureB64 });
         setState(completed.state);
         setSuccess('Normal mock transfer complete. Runtime access will now follow the new owner.');
         return;
