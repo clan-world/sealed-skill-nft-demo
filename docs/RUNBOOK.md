@@ -88,7 +88,7 @@ SOLANA_ENABLED=true
 SOLANA_CLUSTER=devnet
 SOLANA_RPC_URL=https://api.devnet.solana.com
 BACKEND_KEYPAIR_PATH=../../data/solana/backend-keypair.json
-VITE_DYNAMIC_ENVIRONMENT_ID=your_dynamic_environment_id
+VITE_DYNAMIC_ENVIRONMENT_ID=2476e25b-44e5-4096-b443-85972742afe5
 ```
 
 Create a backend keypair:
