@@ -5,9 +5,10 @@ import { PublicKey, Transaction } from '@solana/web3.js';
 import { canonicalJson, makeNonce, shortHash, type DemoState } from '@sealed-skill/protocol';
 import { api } from './api.js';
 import { InfoCard, StatusPill, TeePanel } from './components.js';
-import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, type VisualStep } from './steps.js';
+import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, useTimeBrokerStepLabels, type VisualStep } from './steps.js';
 
-type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'runtime' | 'prepare' | 'ownership' | 'transfer';
+type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'runtime' | 'prepare' | 'ownership' | 'transfer' | 'open-transfer';
+type DemoPage = 'broker-gated' | 'open-transfer';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,6 +48,10 @@ function explorerTxUrl(signature: string): string {
   return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }
 
+function pageFromHash(): DemoPage {
+  return window.location.hash === '#/open-transfer' ? 'open-transfer' : 'broker-gated';
+}
+
 function assertPublicKey(value: string, label: string) {
   try {
     return new PublicKey(value).toBase58();
@@ -63,11 +68,12 @@ export function App() {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [creatorSteps, setCreatorSteps] = useState(makeSteps(creatorStepLabels));
-  const [brokerSteps, setBrokerSteps] = useState(makeSteps(brokerStepLabels));
+  const [brokerSteps, setBrokerSteps] = useState(makeSteps(pageFromHash() === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
   const [runtimeSteps, setRuntimeSteps] = useState(makeSteps(runtimeStepLabels));
   const [mintModalOpen, setMintModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [ownershipModalOpen, setOwnershipModalOpen] = useState(false);
+  const [page, setPage] = useState<DemoPage>(pageFromHash);
   const [ownershipResult, setOwnershipResult] = useState<{
     nftMint: string;
     expectedOwner: string;
@@ -86,6 +92,21 @@ export function App() {
   }, []);
 
   useEffect(() => { refresh().catch(() => undefined); }, [refresh]);
+  useEffect(() => {
+    const onHashChange = () => {
+      const nextPage = pageFromHash();
+      setPage(nextPage);
+      setBrokerSteps(makeSteps(nextPage === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  function selectPage(nextPage: DemoPage) {
+    window.location.hash = nextPage === 'open-transfer' ? '#/open-transfer' : '#/broker-gated';
+    setPage(nextPage);
+    setBrokerSteps(makeSteps(nextPage === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
+  }
 
   async function runAction(name: Busy, fn: () => Promise<void>) {
     setBusy(name);
@@ -114,7 +135,7 @@ export function App() {
       const next = await api<DemoState>('/api/demo/reset', {});
       setState(next);
       setCreatorSteps(makeSteps(creatorStepLabels));
-      setBrokerSteps(makeSteps(brokerStepLabels));
+      setBrokerSteps(makeSteps(page === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
       setRuntimeSteps(makeSteps(runtimeStepLabels));
       setMintModalOpen(false);
       setTransferModalOpen(false);
@@ -136,7 +157,10 @@ export function App() {
     if (!connectedPubkey) throw new Error('Connect wallet A first.');
     await runAction('generate', async () => {
       await animate(creatorStepLabels, setCreatorSteps, async () => {
-        const result = await api<{ state: DemoState; mintSignature?: string }>('/api/artifacts/generate', { ownerPublicKey: connectedPubkey });
+        const result = await api<{ state: DemoState; mintSignature?: string }>('/api/artifacts/generate', {
+          ownerPublicKey: connectedPubkey,
+          transferPolicy: page === 'open-transfer' ? 'open' : 'broker-gated'
+        });
         setState(result.state);
         setSuccess('Sealed artifact created. Review the NFTee mint payload in TEE2.');
       });
@@ -156,6 +180,7 @@ export function App() {
     if (!connectedPubkey) throw new Error('Connect the wallet you want to test.');
     await runAction('runtime', async () => {
       const steps = makeSteps(runtimeStepLabels);
+      const brokerUseSteps = makeSteps(useTimeBrokerStepLabels);
       const artifact = state.artifact;
       if (!artifact?.nftMint) throw new Error('Generate artifact first.');
       steps[0] = { ...steps[0]!, state: 'running' };
@@ -186,6 +211,16 @@ export function App() {
       for (let i = 2; i < runtimeStepLabels.length; i++) {
         steps[i] = { ...steps[i]!, state: 'running' };
         setRuntimeSteps([...steps]);
+        if (isOpenPage && i === 3) {
+          setBrokerSteps([...brokerUseSteps]);
+          for (let j = 0; j < brokerUseSteps.length; j++) {
+            brokerUseSteps[j] = { ...brokerUseSteps[j]!, state: 'running' };
+            setBrokerSteps([...brokerUseSteps]);
+            await sleep(120);
+            brokerUseSteps[j] = { ...brokerUseSteps[j]!, state: 'done' };
+            setBrokerSteps([...brokerUseSteps]);
+          }
+        }
         await sleep(220);
         steps[i] = { ...steps[i]!, state: 'done' };
         setRuntimeSteps([...steps]);
@@ -251,6 +286,45 @@ export function App() {
     });
   }
 
+  async function completeOpenTransfer() {
+    await runAction('open-transfer', async () => {
+      if (!connectedPubkey || !wallet.publicKey) throw new Error('Connect the current NFTee owner first.');
+      const toPublicKey = assertPublicKey(recipient, 'Recipient wallet');
+      if (toPublicKey === connectedPubkey) throw new Error('Recipient must be a different wallet from the connected owner.');
+      const artifact = state.artifact;
+      if (!artifact?.nftMint) throw new Error('Generate artifact first.');
+      if (artifact.transferPolicy !== 'open') throw new Error('This NFTee is not in open transfer mode.');
+      if (artifact.nftMint.startsWith('mock_')) {
+        const message = {
+          kind: 'open-transfer',
+          artifactId: artifact.artifactId,
+          nftMint: artifact.nftMint,
+          fromPublicKey: connectedPubkey,
+          toPublicKey,
+          epoch: artifact.epoch,
+          nonce: makeNonce('web-open-transfer')
+        };
+        const signatureB64 = await signWithConnectedWallet(message);
+        const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { fromPublicKey: connectedPubkey, toPublicKey, message, signatureB64 });
+        setState(completed.state);
+        setSuccess('Normal mock transfer complete. Runtime access will now follow the new owner.');
+        return;
+      }
+      const built = await api<{ txBase64: string }>('/api/transfer/open/build', { fromPublicKey: connectedPubkey, toPublicKey });
+      const tx = Transaction.from(base64ToBytes(built.txBase64));
+      if (!wallet.signTransaction) throw new Error('Connected wallet does not support transaction signing.');
+      const signed = await wallet.signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize());
+      const confirmation = await connection.confirmTransaction(sig, 'confirmed');
+      if (confirmation.value.err) {
+        throw new Error(`Solana transfer failed on-chain: ${JSON.stringify(confirmation.value.err)} ${explorerTxUrl(sig)}`);
+      }
+      const completed = await api<{ state: DemoState }>('/api/transfer/open/complete', { fromPublicKey: connectedPubkey, toPublicKey, signature: sig });
+      setState(completed.state);
+      setSuccess(`Normal Solana transfer complete: ${sig}`);
+    });
+  }
+
   async function confirmTransferFromModal() {
     await completeTransfer();
   }
@@ -279,6 +353,7 @@ export function App() {
   const transferExpired = Boolean(transferExpiresAt && Date.now() >= Date.parse(transferExpiresAt));
   const canMint = Boolean(state.artifact && state.artifact.status === 'created' && connectedPubkey);
   const canTransfer = Boolean(state.transferTranscript && state.pendingTransferTo && state.artifact?.nftMint && connectedPubkey && !transferExpired);
+  const canOpenTransfer = Boolean(state.artifact?.transferPolicy === 'open' && state.artifact?.nftMint && connectedPubkey && recipient);
   const mintReview = {
     solanaAction: 'create Token-2022 collectible NFTee mint, attach metadata/group/hook extensions, mint 1 token',
     mintAuthority: 'backend devnet payer',
@@ -316,17 +391,26 @@ export function App() {
       brokerSigner: state.transferTranscript?.signerPublicKeyPem
     }
   };
+  const activePolicy = state.artifact?.transferPolicy ?? (page === 'open-transfer' ? 'open' : 'broker-gated');
+  const isOpenPage = page === 'open-transfer';
 
   return (
     <main>
       <header className="hero">
         <div>
           <p className="eyebrow">Solana + TEE-gated sealed data</p>
-          <h1>Sealed Skill NFTee Demo</h1>
-          <p>The NFTee controls a hidden animal artifact. Owners can use it through the runtime, but cannot read or copy the plaintext.</p>
+          <h1>{isOpenPage ? 'NFTee Open Transfer Model' : 'Sealed Skill NFTee Demo'}</h1>
+          <p>{isOpenPage
+            ? 'This page shows the smoother model: the NFTee transfers like a normal token, then TEE1 checks current ownership only when TEE3 needs to use the sealed data.'
+            : 'The NFTee controls a hidden animal artifact. Owners can use it through the runtime, but cannot read or copy the plaintext.'}</p>
         </div>
         <WalletMultiButton />
       </header>
+
+      <nav className="page-tabs" aria-label="Demo pages">
+        <button className={page === 'broker-gated' ? 'active' : ''} onClick={() => selectPage('broker-gated')} disabled={busy !== 'none'}>Broker-gated transfer</button>
+        <button className={page === 'open-transfer' ? 'active' : ''} onClick={() => selectPage('open-transfer')} disabled={busy !== 'none'}>Open transfer + use-time auth</button>
+      </nav>
 
       <section className="wallet-grid">
         <InfoCard label="Connected wallet" value={connectedPubkey ?? 'connect wallet'} />
@@ -335,6 +419,7 @@ export function App() {
         <InfoCard label="NFTee mint" value={state.artifact?.nftMint} />
         <InfoCard label="Token program" value={state.artifact?.tokenProgram} />
         <InfoCard label="Hook program" value={state.artifact?.hookProgramId} />
+        <InfoCard label="Transfer policy" value={activePolicy === 'open' ? 'Open transfer, broker at use time' : 'Broker capsule before transfer'} />
         <InfoCard label="Encrypted artifact hash" value={artifactHash ? shortHash(artifactHash, 18) : undefined} />
         <InfoCard label="Sealed key hash" value={sealedKeyHash ? shortHash(sealedKeyHash, 18) : undefined} />
         <InfoCard label="Plaintext animal" hidden />
@@ -346,9 +431,18 @@ export function App() {
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
         <button onClick={generateArtifact} disabled={busy !== 'none' || !connectedPubkey}>2. Generate sealed animal artifact</button>
         <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>3. Connected wallet asks runtime</button>
-        <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>4. Prepare broker transfer</button>
-        <button onClick={checkRecipientOwnership} disabled={busy !== 'none' || !state.artifact?.nftMint || !preparedRecipient}>5. Check recipient ownership</button>
-        <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>6. Connected wallet asks runtime</button>
+        {isOpenPage ? (
+          <>
+            <button onClick={completeOpenTransfer} disabled={busy !== 'none' || !canOpenTransfer}>4. Transfer NFTee normally</button>
+            <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>5. Connected wallet asks runtime</button>
+          </>
+        ) : (
+          <>
+            <button onClick={prepareTransfer} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>4. Prepare broker transfer</button>
+            <button onClick={checkRecipientOwnership} disabled={busy !== 'none' || !state.artifact?.nftMint || !preparedRecipient}>5. Check recipient ownership</button>
+            <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>6. Connected wallet asks runtime</button>
+          </>
+        )}
       </section>
 
       <section className="notices">
@@ -358,7 +452,7 @@ export function App() {
       </section>
 
       <section className="tee-grid">
-        <TeePanel title="NFTee Transfer Key Broker" subtitle="Key broker and transfer capsule service" accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
+        <TeePanel title="NFTee Transfer Key Broker" subtitle={isOpenPage ? 'Use-time key release; no transfer preflight required' : 'Key broker and transfer capsule service'} accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
           <div className="tee-panel-actions recipient-transfer-row">
             <input
               aria-label="Transfer recipient wallet"
@@ -368,7 +462,10 @@ export function App() {
               onChange={(event) => setRecipientPublicKey(event.target.value)}
               disabled={busy !== 'none'}
             />
-            {canTransfer && (
+            {isOpenPage && (
+              <button onClick={completeOpenTransfer} disabled={busy !== 'none' || !canOpenTransfer}>Normal transfer</button>
+            )}
+            {!isOpenPage && canTransfer && (
               <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none'}>Transfer NFTee</button>
             )}
           </div>

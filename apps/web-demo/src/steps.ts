@@ -27,6 +27,16 @@ export const brokerStepLabels = [
   'Return capsule to Solana transfer flow'
 ];
 
+export const useTimeBrokerStepLabels = [
+  'Wait for Runtime TEE request',
+  'Check caller is current NFTee owner',
+  'Check artifact epoch and runtime policy',
+  'Unwrap artifact key inside Broker TEE',
+  'Wrap key to Runtime session key',
+  'Sign short-lived access capsule',
+  'Return session-wrapped key to Runtime TEE'
+];
+
 export const runtimeStepLabels = [
   'Receive signed runtime request',
   'Check caller owns NFTee',
