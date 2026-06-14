@@ -26,12 +26,19 @@ const vellumEmblemPath = path.resolve(process.cwd(), '../../Vellum_Emblem.png');
 const teeBrokerUrl = process.env.TEE_BROKER_URL ?? 'http://localhost:4101';
 const teeCreatorUrl = process.env.TEE_CREATOR_URL ?? 'http://localhost:4102';
 const teeRuntimeUrl = process.env.TEE_RUNTIME_URL ?? 'http://localhost:4103';
+const defaultCorsOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://nft.clan-world.com'];
+const configuredCorsOrigins = parseCommaList(process.env.API_CORS_ORIGIN);
+const corsOrigins = configuredCorsOrigins.length ? configuredCorsOrigins : defaultCorsOrigins;
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: corsOrigins }));
 app.use(express.json({ limit: '2mb' }));
 const store = new StateStore(`${dataDir}/demo-state.json`);
 const connection = makeConnection(rpcUrl);
+
+function parseCommaList(value: string | undefined): string[] {
+  return value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

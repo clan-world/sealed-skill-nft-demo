@@ -551,6 +551,7 @@ function createInitializeExtraAccountMetasInstruction(input: {
     programId: input.programId,
     keys: [
       { pubkey: input.admin, isSigner: true, isWritable: true },
+      { pubkey: deriveConfigPda(input.programId), isSigner: false, isWritable: false },
       { pubkey: input.mint, isSigner: false, isWritable: false },
       { pubkey: input.extraAccountMetas, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }

@@ -122,6 +122,7 @@ pub mod sealed_skill {
     }
 
     pub fn initialize_extra_account_metas(ctx: Context<InitializeExtraAccountMetas>, data: Vec<u8>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.config.admin, ctx.accounts.admin.key(), SealedSkillError::NotAdmin);
         let target = &mut ctx.accounts.extra_account_metas.try_borrow_mut_data()?;
         require!(target.len() == data.len(), SealedSkillError::WrongExtraAccountMetasSize);
         target.copy_from_slice(&data);
@@ -239,6 +240,8 @@ pub struct BeginBrokerTransfer<'info> {
 pub struct InitializeExtraAccountMetas<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, ProtocolConfig>,
     /// CHECK: Used only as PDA seed for the Transfer Hook validation account.
     pub nft_mint: UncheckedAccount<'info>,
     /// CHECK: Raw TLV account consumed by Token-2022 transfer hook resolution.

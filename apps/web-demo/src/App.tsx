@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DynamicWidget, useDynamicContext } from '@dynamic-labs/sdk-react-core';
 import { isSolanaWallet } from '@dynamic-labs/solana';
-import { PublicKey, Transaction } from '@solana/web3.js';
-import { Connection } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { canonicalJson, makeNonce, shortHash, type DemoState } from '@sealed-skill/protocol';
 import { api } from './api.js';
 import { InfoCard, StatusPill, TeePanel } from './components.js';
