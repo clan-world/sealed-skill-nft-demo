@@ -7,6 +7,7 @@ import { randomHex, unwrapSecretWithPrivateKey, wrapSecretForPublicKey } from '@
 import { createJsonServer, loadOrCreateTeeIdentity, readJsonBody, sendJson, signByTee, toTeeRecord } from '@sealed-skill/tee-common';
 
 const port = Number(process.env.TEE_BROKER_PORT ?? 4101);
+const host = process.env.TEE_BROKER_HOST ?? '127.0.0.1';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const serviceUrl = process.env.TEE_BROKER_PUBLIC_URL ?? `http://localhost:${port}`;
@@ -118,4 +119,4 @@ const server = createJsonServer(async (req, res) => {
   sendJson(res, 404, { error: 'not found' });
 });
 
-server.listen(port, () => console.log(`TEE Broker listening on ${serviceUrl}`));
+server.listen(port, host, () => console.log(`TEE Broker listening on ${serviceUrl} via ${host}:${port}`));

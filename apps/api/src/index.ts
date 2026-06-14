@@ -13,6 +13,7 @@ import { buildDemoNftTransferTx, buildOpenDemoNftTransferTx, getCurrentDemoNftOw
 import { StateStore } from './state.js';
 
 const port = Number(process.env.API_PORT ?? 8787);
+const host = process.env.API_HOST ?? '127.0.0.1';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const solanaEnabled = (process.env.SOLANA_ENABLED ?? 'false') === 'true';
@@ -82,8 +83,31 @@ function verifyRuntimeRequestSignature(input: {
   }
 }
 
+function mergeSolanaReceipts(
+  current: Awaited<ReturnType<StateStore['read']>>['solanaReceipts'],
+  updates: { mintSignature?: string | undefined; transferSignature?: string | undefined; approvalSignature?: string | undefined }
+) {
+  const next = { ...current };
+  if (updates.mintSignature) next.mintSignature = updates.mintSignature;
+  if (updates.transferSignature) next.transferSignature = updates.transferSignature;
+  if (updates.approvalSignature) next.approvalSignature = updates.approvalSignature;
+  return next;
+}
+
 app.get('/api/health', async (_req, res) => {
-  res.json({ ok: true, solanaEnabled, rpcUrl, tokenProgram: 'Token-2022', sealedSkillProgramId: sealedSkillProgramId.toBase58(), teeBrokerUrl, teeCreatorUrl, teeRuntimeUrl });
+  res.json({
+    ok: true,
+    solanaEnabled,
+    rpcUrl,
+    tokenProgram: 'Token-2022',
+    sealedSkillProgramId: sealedSkillProgramId.toBase58(),
+    teeBrokerUrl,
+    teeCreatorUrl,
+    teeRuntimeUrl,
+    storageBackend: process.env.STORAGE_BACKEND ?? 'file',
+    walrusAggregatorUrl: process.env.WALRUS_AGGREGATOR_URL,
+    walrusPublisherUrl: process.env.WALRUS_PUBLISHER_URL
+  });
 });
 
 app.get('/api/demo-state', async (_req, res) => {
@@ -267,6 +291,7 @@ app.post('/api/artifacts/mint', async (_req, res, next) => {
       ...s,
       artifact: mintedArtifact,
       currentOwner: artifact.ownerPublicKey,
+      solanaReceipts: mergeSolanaReceipts(s.solanaReceipts, { mintSignature }),
       log: [`${new Date().toISOString()} NFTee minted to ${artifact.ownerPublicKey}: ${nftMint}`, ...s.log]
     }));
 
@@ -377,6 +402,7 @@ app.post('/api/transfer/prepare', async (req, res, next) => {
       transferTranscript: brokered.transcript,
       pendingTransferTo: toPublicKey,
       artifact: approvalPda ? { ...artifact, approvalPda } : artifact,
+      solanaReceipts: mergeSolanaReceipts(s.solanaReceipts, { approvalSignature }),
       log: [`${new Date().toISOString()} Transfer prepared from ${fromPublicKey} to ${toPublicKey}${approvalSignature ? ` approvalTx=${approvalSignature}` : ''}`, ...s.log]
     }));
     res.json({ ok: true, ...brokered, approvalSignature, state: next });
@@ -464,6 +490,7 @@ app.post('/api/transfer/open/complete', async (req, res, next) => {
         ...s,
         artifact: nextArtifact,
         currentOwner: toPublicKey,
+        solanaReceipts: mergeSolanaReceipts(s.solanaReceipts, { transferSignature: signature }),
         log: [`${new Date().toISOString()} Open transfer completed to ${toPublicKey}${signature ? ` tx=${signature}` : ''}`, ...s.log]
       };
       delete updated.transferTranscript;
@@ -531,6 +558,7 @@ app.post('/api/transfer/complete', async (req, res, next) => {
         ...s,
         artifact: nextArtifact,
         currentOwner: toPublicKey,
+        solanaReceipts: mergeSolanaReceipts(s.solanaReceipts, { transferSignature: signature }),
         log: [`${new Date().toISOString()} Transfer completed to ${toPublicKey}${signature ? ` tx=${signature}` : ''}`, ...s.log]
       };
       delete nextState.pendingTransferTo;
@@ -595,4 +623,4 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
   res.status(500).json({ ok: false, error: message });
 });
 
-app.listen(port, () => console.log(`API listening on http://localhost:${port}`));
+app.listen(port, host, () => console.log(`API listening on http://${host}:${port}`));

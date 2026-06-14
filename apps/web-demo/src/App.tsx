@@ -8,7 +8,7 @@ import { InfoCard, StatusPill, TeePanel } from './components.js';
 import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, useTimeBrokerStepLabels, type VisualStep } from './steps.js';
 
 type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'runtime' | 'prepare' | 'ownership' | 'transfer' | 'open-transfer';
-type DemoPage = 'broker-gated' | 'open-transfer';
+type DemoPage = 'broker-gated' | 'open-transfer' | 'judge-demo';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,7 +48,12 @@ function explorerTxUrl(signature: string): string {
   return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }
 
+function explorerAddressUrl(address?: string): string | undefined {
+  return address ? `https://explorer.solana.com/address/${address}?cluster=devnet` : undefined;
+}
+
 function pageFromHash(): DemoPage {
+  if (window.location.hash === '#/eth-global-nyc-2026') return 'judge-demo';
   return window.location.hash === '#/open-transfer' ? 'open-transfer' : 'broker-gated';
 }
 
@@ -68,7 +73,7 @@ export function App() {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [creatorSteps, setCreatorSteps] = useState(makeSteps(creatorStepLabels));
-  const [brokerSteps, setBrokerSteps] = useState(makeSteps(pageFromHash() === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
+  const [brokerSteps, setBrokerSteps] = useState(makeSteps(pageFromHash() === 'broker-gated' ? brokerStepLabels : useTimeBrokerStepLabels));
   const [runtimeSteps, setRuntimeSteps] = useState(makeSteps(runtimeStepLabels));
   const [mintModalOpen, setMintModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -96,16 +101,16 @@ export function App() {
     const onHashChange = () => {
       const nextPage = pageFromHash();
       setPage(nextPage);
-      setBrokerSteps(makeSteps(nextPage === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
+      setBrokerSteps(makeSteps(nextPage === 'broker-gated' ? brokerStepLabels : useTimeBrokerStepLabels));
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   function selectPage(nextPage: DemoPage) {
-    window.location.hash = nextPage === 'open-transfer' ? '#/open-transfer' : '#/broker-gated';
+    window.location.hash = nextPage === 'judge-demo' ? '#/eth-global-nyc-2026' : nextPage === 'open-transfer' ? '#/open-transfer' : '#/broker-gated';
     setPage(nextPage);
-    setBrokerSteps(makeSteps(nextPage === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
+    setBrokerSteps(makeSteps(nextPage === 'broker-gated' ? brokerStepLabels : useTimeBrokerStepLabels));
   }
 
   async function runAction(name: Busy, fn: () => Promise<void>) {
@@ -135,7 +140,7 @@ export function App() {
       const next = await api<DemoState>('/api/demo/reset', {});
       setState(next);
       setCreatorSteps(makeSteps(creatorStepLabels));
-      setBrokerSteps(makeSteps(page === 'open-transfer' ? useTimeBrokerStepLabels : brokerStepLabels));
+      setBrokerSteps(makeSteps(page === 'broker-gated' ? brokerStepLabels : useTimeBrokerStepLabels));
       setRuntimeSteps(makeSteps(runtimeStepLabels));
       setMintModalOpen(false);
       setTransferModalOpen(false);
@@ -159,7 +164,7 @@ export function App() {
       await animate(creatorStepLabels, setCreatorSteps, async () => {
         const result = await api<{ state: DemoState; mintSignature?: string }>('/api/artifacts/generate', {
           ownerPublicKey: connectedPubkey,
-          transferPolicy: page === 'open-transfer' ? 'open' : 'broker-gated'
+          transferPolicy: page === 'broker-gated' ? 'broker-gated' : 'open'
         });
         setState(result.state);
         setSuccess('Sealed artifact created. Review the NFTee mint payload in TEE2.');
@@ -211,7 +216,7 @@ export function App() {
       for (let i = 2; i < runtimeStepLabels.length; i++) {
         steps[i] = { ...steps[i]!, state: 'running' };
         setRuntimeSteps([...steps]);
-        if (isOpenPage && i === 3) {
+        if (isUseTimeAuthPage && i === 3) {
           setBrokerSteps([...brokerUseSteps]);
           for (let j = 0; j < brokerUseSteps.length; j++) {
             brokerUseSteps[j] = { ...brokerUseSteps[j]!, state: 'running' };
@@ -391,16 +396,23 @@ export function App() {
       brokerSigner: state.transferTranscript?.signerPublicKeyPem
     }
   };
-  const activePolicy = state.artifact?.transferPolicy ?? (page === 'open-transfer' ? 'open' : 'broker-gated');
+  const activePolicy = state.artifact?.transferPolicy ?? (page === 'broker-gated' ? 'broker-gated' : 'open');
   const isOpenPage = page === 'open-transfer';
+  const isJudgePage = page === 'judge-demo';
+  const isUseTimeAuthPage = page !== 'broker-gated';
+  const storageReceipt = state.artifact?.encryptedBlob.storage;
+  const walrusReadUrl = storageReceipt?.readUrl;
+  const solanaReceipts = state.solanaReceipts;
 
   return (
     <main>
       <header className="hero">
         <div>
           <p className="eyebrow">Solana + TEE-gated sealed data</p>
-          <h1>{isOpenPage ? 'NFTee Open Transfer Model' : 'Sealed Skill NFTee Demo'}</h1>
-          <p>{isOpenPage
+          <h1>{isJudgePage ? 'Encrypted Agent Data Blocks' : isOpenPage ? 'NFTee Open Transfer Model' : 'Sealed Skill NFTee Demo'}</h1>
+          <p>{isJudgePage
+            ? 'A public Walrus blob carries encrypted agent data. A Solana NFTee licenses who can consume it, and Docker fake TEEs enforce key release at runtime.'
+            : isOpenPage
             ? 'This page shows the smoother model: the NFTee transfers like a normal token, then TEE1 checks current ownership only when TEE3 needs to use the sealed data.'
             : 'The NFTee controls a hidden animal artifact. Owners can use it through the runtime, but cannot read or copy the plaintext.'}</p>
         </div>
@@ -410,9 +422,64 @@ export function App() {
       <nav className="page-tabs" aria-label="Demo pages">
         <button className={page === 'broker-gated' ? 'active' : ''} onClick={() => selectPage('broker-gated')} disabled={busy !== 'none'}>Broker-gated transfer</button>
         <button className={page === 'open-transfer' ? 'active' : ''} onClick={() => selectPage('open-transfer')} disabled={busy !== 'none'}>Open transfer + use-time auth</button>
+        <button className={page === 'judge-demo' ? 'active' : ''} onClick={() => selectPage('judge-demo')} disabled={busy !== 'none'}>ETHGlobal NYC 2026</button>
       </nav>
 
-      <section className="wallet-grid">
+      {isJudgePage && (
+        <section className="judge-layout">
+          <div className="judge-stage">
+            <section className="judge-story">
+              <div>
+                <p className="eyebrow">Judge script</p>
+                <h2>Public storage, private licensed consumption</h2>
+                <p>The animal name is encrypted before it leaves TEE2. Walrus stores only ciphertext; TEE1 releases a session key only when TEE3 proves the connected wallet currently owns the NFTee.</p>
+              </div>
+              <div className="judge-actions">
+                <button className="reset-button" onClick={resetDemo} disabled={busy !== 'none'}>Reset</button>
+                <button onClick={registerTees} disabled={busy !== 'none'}>1. Register Docker TEEs</button>
+                <button onClick={generateArtifact} disabled={busy !== 'none' || !connectedPubkey}>2. Create + store encrypted block</button>
+                <button onClick={() => setMintModalOpen(true)} disabled={busy !== 'none' || !canMint}>3. Mint Solana NFTee</button>
+                <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>4. Consume as owner</button>
+                <input
+                  aria-label="Transfer recipient wallet"
+                  className="recipient-input judge-recipient-input"
+                  placeholder="Recipient wallet for normal transfer"
+                  value={recipientPublicKey}
+                  onChange={(event) => setRecipientPublicKey(event.target.value)}
+                  disabled={busy !== 'none'}
+                />
+                <button onClick={completeOpenTransfer} disabled={busy !== 'none' || !canOpenTransfer}>5. Transfer normally</button>
+                <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>6. Try connected wallet</button>
+              </div>
+            </section>
+
+            <section className="judge-tee-grid">
+              <TeePanel title="TEE1 Broker" subtitle="Checks NFT ownership at use time and wraps the key to TEE3" accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }} />
+              <TeePanel title="TEE2 Creator" subtitle="Chooses the hidden animal, encrypts it, uploads ciphertext to Walrus" accent="#13b981" chipLabel="TEE2" steps={creatorSteps} publicKey={state.tees.creator?.signPublicKeyPem} measurement={state.tees.creator?.measurement} stepTones={{ 1: 'broker', 2: 'runtime', 3: 'creator', 4: 'creator', 5: 'creator', 6: 'creator', 7: 'broker' }} />
+              <TeePanel title="TEE3 Runtime" subtitle="Fetches public ciphertext and returns only the licensed answer" accent="#4f8cff" chipLabel="TEE3" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} stepTones={{ 1: 'broker', 3: 'broker', 4: 'creator' }} />
+            </section>
+          </div>
+
+          <aside className="receipt-rail">
+            <p className="eyebrow">Live receipts</p>
+            <h2>Proof rail</h2>
+            <InfoCard label="Walrus blob" value={storageReceipt?.blobId ?? storageReceipt?.provider} href={walrusReadUrl} />
+            <InfoCard label="Walrus status" value={storageReceipt?.status ?? (storageReceipt?.provider === 'file' ? 'Local file storage' : undefined)} />
+            <InfoCard label="Sui ref" value={storageReceipt?.suiRef} href={storageReceipt?.suiUrl} />
+            <InfoCard label="Stored until epoch" value={storageReceipt?.endEpoch ? String(storageReceipt.endEpoch) : undefined} />
+            <InfoCard label="Ciphertext hash" value={artifactHash ? shortHash(artifactHash, 18) : undefined} />
+            <InfoCard label="NFTee mint" value={state.artifact?.nftMint} href={explorerAddressUrl(state.artifact?.nftMint)} />
+            <InfoCard label="Mint tx" value={solanaReceipts?.mintSignature} href={solanaReceipts?.mintSignature ? explorerTxUrl(solanaReceipts.mintSignature) : undefined} />
+            <InfoCard label="Transfer tx" value={solanaReceipts?.transferSignature} href={solanaReceipts?.transferSignature ? explorerTxUrl(solanaReceipts.transferSignature) : undefined} />
+            <InfoCard label="Artifact PDA" value={state.artifact?.artifactPda} href={explorerAddressUrl(state.artifact?.artifactPda)} />
+            <InfoCard label="Policy PDA" value={state.artifact?.transferPolicyPda} href={explorerAddressUrl(state.artifact?.transferPolicyPda)} />
+            <InfoCard label="Runtime output" value={state.lastRuntimeResult?.output} />
+            <InfoCard label="Plaintext animal" hidden />
+          </aside>
+        </section>
+      )}
+
+      {!isJudgePage && <section className="wallet-grid">
         <InfoCard label="Connected wallet" value={connectedPubkey ?? 'connect wallet'} />
         <InfoCard label="Transfer recipient" value={recipient || 'enter recipient wallet'} />
         <InfoCard label="Current owner" value={state.currentOwner} />
@@ -424,14 +491,14 @@ export function App() {
         <InfoCard label="Sealed key hash" value={sealedKeyHash ? shortHash(sealedKeyHash, 18) : undefined} />
         <InfoCard label="Plaintext animal" hidden />
         <InfoCard label="Runtime output" value={state.lastRuntimeResult?.output} />
-      </section>
+      </section>}
 
-      <section className="actions">
+      {!isJudgePage && <section className="actions">
         <button className="reset-button" onClick={resetDemo} disabled={busy !== 'none'}>Reset demo</button>
         <button onClick={registerTees} disabled={busy !== 'none'}>1. Register TEEs</button>
         <button onClick={generateArtifact} disabled={busy !== 'none' || !connectedPubkey}>2. Generate sealed animal artifact</button>
         <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>3. Connected wallet asks runtime</button>
-        {isOpenPage ? (
+        {isUseTimeAuthPage ? (
           <>
             <button onClick={completeOpenTransfer} disabled={busy !== 'none' || !canOpenTransfer}>4. Transfer NFTee normally</button>
             <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>5. Connected wallet asks runtime</button>
@@ -443,7 +510,7 @@ export function App() {
             <button onClick={runRuntimeAsConnectedWallet} disabled={busy !== 'none' || !state.artifact?.nftMint || !connectedPubkey}>6. Connected wallet asks runtime</button>
           </>
         )}
-      </section>
+      </section>}
 
       <section className="notices">
         {busy !== 'none' && <StatusPill ok text={`Processing: ${busy}`} />}
@@ -451,8 +518,8 @@ export function App() {
         {error && <StatusPill text={error} />}
       </section>
 
-      <section className="tee-grid">
-        <TeePanel title="NFTee Transfer Key Broker" subtitle={isOpenPage ? 'Use-time key release; no transfer preflight required' : 'Key broker and transfer capsule service'} accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
+      {!isJudgePage && <section className="tee-grid">
+        <TeePanel title="NFTee Transfer Key Broker" subtitle={isUseTimeAuthPage ? 'Use-time key release; no transfer preflight required' : 'Key broker and transfer capsule service'} accent="#9b5cff" chipLabel="TEE1" steps={brokerSteps} publicKey={state.tees.broker?.signPublicKeyPem} measurement={state.tees.broker?.measurement} stepTones={{ 2: 'broker' }}>
           <div className="tee-panel-actions recipient-transfer-row">
             <input
               aria-label="Transfer recipient wallet"
@@ -462,10 +529,10 @@ export function App() {
               onChange={(event) => setRecipientPublicKey(event.target.value)}
               disabled={busy !== 'none'}
             />
-            {isOpenPage && (
+            {isUseTimeAuthPage && (
               <button onClick={completeOpenTransfer} disabled={busy !== 'none' || !canOpenTransfer}>Normal transfer</button>
             )}
-            {!isOpenPage && canTransfer && (
+            {!isUseTimeAuthPage && canTransfer && (
               <button onClick={() => setTransferModalOpen(true)} disabled={busy !== 'none'}>Transfer NFTee</button>
             )}
           </div>
@@ -478,7 +545,7 @@ export function App() {
           )}
         </TeePanel>
         <TeePanel title="Approved Execution Runtime" subtitle="Uses the artifact and returns allowed output" accent="#4f8cff" chipLabel="TEE3" steps={runtimeSteps} publicKey={state.tees.runtime?.signPublicKeyPem} measurement={state.tees.runtime?.measurement} stepTones={{ 1: 'broker', 3: 'broker', 4: 'creator' }} />
-      </section>
+      </section>}
 
       {mintModalOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setMintModalOpen(false)}>
