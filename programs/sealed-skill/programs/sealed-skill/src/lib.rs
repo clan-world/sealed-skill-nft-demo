@@ -1,6 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{account_info::next_account_info, program_error::ProgramError};
-use spl_token_2022::{extension::StateWithExtensions, state::Account as TokenAccount};
+use spl_token_2022::{
+    extension::{transfer_hook::TransferHookAccount, BaseStateWithExtensions, StateWithExtensions},
+    state::Account as TokenAccount,
+};
 
 const TRANSFER_HOOK_EXECUTE_DISCRIMINATOR: [u8; 8] = [105, 37, 101, 197, 75, 251, 102, 26];
 
@@ -361,6 +364,10 @@ pub enum SealedSkillError {
     WrongExtraAccountMetasSize,
     #[msg("Invalid transfer policy")]
     InvalidTransferPolicy,
+    #[msg("Invalid transfer hook account")]
+    InvalidHookAccount,
+    #[msg("Transfer hook must be invoked by Token-2022 during a transfer")]
+    InvalidTransferContext,
     #[msg("Overflow")]
     Overflow,
 }
@@ -387,14 +394,45 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
     let mint_info = next_account_info(account_iter)?;
     let destination_info = next_account_info(account_iter)?;
     let authority_info = next_account_info(account_iter)?;
-    let _validation_info = next_account_info(account_iter)?;
+    let validation_info = next_account_info(account_iter)?;
     let artifact_info = next_account_info(account_iter)?;
     let policy_or_approval_info = next_account_info(account_iter)?;
 
+    let expected_validation = Pubkey::find_program_address(&[b"extra-account-metas", mint_info.key.as_ref()], &crate::ID).0;
+    let expected_artifact = Pubkey::find_program_address(&[b"artifact", mint_info.key.as_ref()], &crate::ID).0;
+    let expected_policy = Pubkey::find_program_address(&[b"transfer-policy", mint_info.key.as_ref()], &crate::ID).0;
+    let expected_approval = Pubkey::find_program_address(&[b"approval", mint_info.key.as_ref()], &crate::ID).0;
+
+    if *validation_info.key != expected_validation || *artifact_info.key != expected_artifact {
+        return Err(error!(SealedSkillError::InvalidHookAccount).into());
+    }
+    if *policy_or_approval_info.key != expected_policy && *policy_or_approval_info.key != expected_approval {
+        return Err(error!(SealedSkillError::InvalidHookAccount).into());
+    }
+    let token_2022_program = spl_token_2022::id();
+    if *source_info.owner != token_2022_program || *destination_info.owner != token_2022_program || *mint_info.owner != token_2022_program {
+        return Err(error!(SealedSkillError::InvalidTransferContext).into());
+    }
+
     let source_data = source_info.try_borrow_data()?;
     let destination_data = destination_info.try_borrow_data()?;
-    let source = StateWithExtensions::<TokenAccount>::unpack(&source_data)?.base;
-    let destination = StateWithExtensions::<TokenAccount>::unpack(&destination_data)?.base;
+    let source_state = StateWithExtensions::<TokenAccount>::unpack(&source_data)?;
+    let destination_state = StateWithExtensions::<TokenAccount>::unpack(&destination_data)?;
+    let source_hook = source_state
+        .get_extension::<TransferHookAccount>()
+        .map_err(|_| error!(SealedSkillError::InvalidTransferContext))?;
+    let destination_hook = destination_state
+        .get_extension::<TransferHookAccount>()
+        .map_err(|_| error!(SealedSkillError::InvalidTransferContext))?;
+    if !bool::from(source_hook.transferring) || !bool::from(destination_hook.transferring) {
+        return Err(error!(SealedSkillError::InvalidTransferContext).into());
+    }
+    let source = source_state.base;
+    let destination = destination_state.base;
+
+    if source.mint != *mint_info.key || destination.mint != *mint_info.key {
+        return Err(error!(SealedSkillError::WrongMint).into());
+    }
 
     let mut artifact = {
         let data = artifact_info.try_borrow_data()?;
@@ -406,10 +444,12 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
         return Err(error!(SealedSkillError::WrongMint).into());
     }
 
-    let policy = {
+    let policy = if *policy_or_approval_info.key == expected_policy {
         let data = policy_or_approval_info.try_borrow_data()?;
         let mut slice: &[u8] = &data;
-        TransferPolicyAccount::try_deserialize(&mut slice).ok()
+        Some(TransferPolicyAccount::try_deserialize(&mut slice).map_err(|_| ProgramError::InvalidAccountData)?)
+    } else {
+        None
     };
     let has_policy_account = policy.is_some();
 
@@ -431,7 +471,11 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
     }
 
     let approval_info = if has_policy_account {
-        next_account_info(account_iter)?
+        let approval_info = next_account_info(account_iter)?;
+        if *approval_info.key != expected_approval {
+            return Err(error!(SealedSkillError::InvalidHookAccount).into());
+        }
+        approval_info
     } else {
         policy_or_approval_info
     };
