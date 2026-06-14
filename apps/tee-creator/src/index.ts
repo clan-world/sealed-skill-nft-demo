@@ -5,15 +5,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encryptArtifactJson, generateSymmetricKey, randomHex, wrapSecretForPublicKey } from '@sealed-skill/crypto';
 import { hashJson, ANIMALS, nowIso, makeNonce, type ArtifactRecord, type CreationTranscript, type RuntimePolicy, type TransferPolicy } from '@sealed-skill/protocol';
-import { FileBlobStore } from '@sealed-skill/storage';
+import { createBlobStoreFromEnv } from '@sealed-skill/storage';
 import { createJsonServer, loadOrCreateTeeIdentity, readJsonBody, sendJson, signByTee, toTeeRecord } from '@sealed-skill/tee-common';
 
 const port = Number(process.env.TEE_CREATOR_PORT ?? 4102);
+const host = process.env.TEE_CREATOR_HOST ?? '127.0.0.1';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const serviceUrl = process.env.TEE_CREATOR_PUBLIC_URL ?? `http://localhost:${port}`;
 const identity = await loadOrCreateTeeIdentity({ role: 'creator', serviceName: 'tee-creator', dataDir });
-const store = new FileBlobStore(`${dataDir}/blobs`);
+const store = createBlobStoreFromEnv(`${dataDir}/blobs`);
 
 const server = createJsonServer(async (req, res) => {
   const url = new URL(req.url ?? '/', serviceUrl);
@@ -62,6 +63,7 @@ const server = createJsonServer(async (req, res) => {
     encrypted.ref.uri = stored.uri;
     encrypted.ref.sha256 = stored.sha256;
     encrypted.ref.bytes = stored.bytes;
+    if (stored.storage) encrypted.ref.storage = stored.storage;
 
     const sealedKeyForBroker = wrapSecretForPublicKey(key, body.brokerWrapPublicKeyPem, {
       artifactId,
@@ -106,4 +108,4 @@ const server = createJsonServer(async (req, res) => {
   sendJson(res, 404, { error: 'not found' });
 });
 
-server.listen(port, () => console.log(`TEE Creator listening on ${serviceUrl}`));
+server.listen(port, host, () => console.log(`TEE Creator listening on ${serviceUrl} via ${host}:${port}`));

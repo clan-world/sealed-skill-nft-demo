@@ -5,16 +5,17 @@ import { fileURLToPath } from 'node:url';
 import { decryptArtifactJson, generateX25519KeyPair, unwrapSecretWithPrivateKey } from '@sealed-skill/crypto';
 import { answerAnimalSound, isAllowedPrompt } from '@sealed-skill/policies';
 import { hashJson, makeNonce, nowIso, type ArtifactRecord, type RuntimeTranscript } from '@sealed-skill/protocol';
-import { FileBlobStore } from '@sealed-skill/storage';
+import { createBlobStoreFromEnv } from '@sealed-skill/storage';
 import { createJsonServer, fetchJson, loadOrCreateTeeIdentity, readJsonBody, sendJson, signByTee, toTeeRecord } from '@sealed-skill/tee-common';
 
 const port = Number(process.env.TEE_RUNTIME_PORT ?? 4103);
+const host = process.env.TEE_RUNTIME_HOST ?? '127.0.0.1';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const dataDir = path.resolve(repoRoot, process.env.DEMO_DATA_DIR ?? 'data');
 const serviceUrl = process.env.TEE_RUNTIME_PUBLIC_URL ?? `http://localhost:${port}`;
 const brokerUrl = process.env.TEE_BROKER_URL ?? 'http://localhost:4101';
 const identity = await loadOrCreateTeeIdentity({ role: 'runtime', serviceName: 'tee-runtime', dataDir });
-const store = new FileBlobStore(`${dataDir}/blobs`);
+const store = createBlobStoreFromEnv(`${dataDir}/blobs`);
 
 interface AnimalArtifact {
   animal: string;
@@ -97,4 +98,4 @@ const server = createJsonServer(async (req, res) => {
   sendJson(res, 404, { error: 'not found' });
 });
 
-server.listen(port, () => console.log(`TEE Runtime listening on ${serviceUrl}`));
+server.listen(port, host, () => console.log(`TEE Runtime listening on ${serviceUrl} via ${host}:${port}`));
