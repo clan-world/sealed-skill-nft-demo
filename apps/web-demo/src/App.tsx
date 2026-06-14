@@ -13,6 +13,8 @@ type SolanaTransactionSigner = {
   signTransaction(transaction: Transaction): Promise<Transaction>;
 };
 
+const solanaCluster = import.meta.env.VITE_SOLANA_CLUSTER ?? 'devnet';
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -44,15 +46,15 @@ function base64ToBytes(value: string): Uint8Array {
 }
 
 function solscanSearchUrl(value?: string): string | undefined {
-  return value ? `https://solscan.io/search?q=${encodeURIComponent(value)}&cluster=devnet` : undefined;
+  return value ? `https://solscan.io/search?q=${encodeURIComponent(value)}&cluster=${encodeURIComponent(solanaCluster)}` : undefined;
 }
 
 function explorerTxUrl(signature: string): string {
-  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+  return `https://explorer.solana.com/tx/${signature}?cluster=${encodeURIComponent(solanaCluster)}`;
 }
 
 function explorerAddressUrl(address?: string): string | undefined {
-  return address ? `https://explorer.solana.com/address/${address}?cluster=devnet` : undefined;
+  return address ? `https://explorer.solana.com/address/${address}?cluster=${encodeURIComponent(solanaCluster)}` : undefined;
 }
 
 function pageFromHash(): DemoPage {
