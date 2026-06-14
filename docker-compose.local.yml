@@ -60,7 +60,7 @@ services:
       WALRUS_PUBLISHER_URL: ${WALRUS_PUBLISHER_URL:-https://publisher.walrus-testnet.walrus.space}
       WALRUS_AGGREGATOR_URL: ${WALRUS_AGGREGATOR_URL:-https://aggregator.walrus-testnet.walrus.space}
       WALRUS_SUI_NETWORK: ${WALRUS_SUI_NETWORK:-testnet}
-    ports: ["127.0.0.1:8787:8787"]
+    ports: ["${DEMO_API_HOST_BIND:-127.0.0.1}:8787:8787"]
     volumes: ["demo-data:/app/data"]
     depends_on: [tee-broker, tee-creator, tee-runtime]
 
@@ -73,7 +73,7 @@ services:
       VITE_API_BASE_URL: http://localhost:8787
       VITE_SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
       VITE_DYNAMIC_ENVIRONMENT_ID: ${VITE_DYNAMIC_ENVIRONMENT_ID:-}
-    ports: ["127.0.0.1:5173:5173"]
+    ports: ["${DEMO_WEB_HOST_BIND:-127.0.0.1}:5173:5173"]
     depends_on: [api]
 
 volumes:

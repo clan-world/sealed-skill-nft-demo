@@ -87,7 +87,7 @@ function mergeSolanaReceipts(
   current: Awaited<ReturnType<StateStore['read']>>['solanaReceipts'],
   updates: { mintSignature?: string | undefined; transferSignature?: string | undefined; approvalSignature?: string | undefined }
 ) {
-  const next = { ...current };
+  const next = { ...(current ?? {}) };
   if (updates.mintSignature) next.mintSignature = updates.mintSignature;
   if (updates.transferSignature) next.transferSignature = updates.transferSignature;
   if (updates.approvalSignature) next.approvalSignature = updates.approvalSignature;
@@ -231,6 +231,7 @@ app.post('/api/artifacts/generate', async (req, res, next) => {
         artifact,
         creationTranscript: created.transcript,
         currentOwner: ownerPublicKey,
+        solanaReceipts: {},
         log: [`${new Date().toISOString()} Sealed artifact generated and ready to mint`, ...s.log]
       };
       delete nextState.transferTranscript;
@@ -291,7 +292,7 @@ app.post('/api/artifacts/mint', async (_req, res, next) => {
       ...s,
       artifact: mintedArtifact,
       currentOwner: artifact.ownerPublicKey,
-      solanaReceipts: mergeSolanaReceipts(s.solanaReceipts, { mintSignature }),
+      solanaReceipts: mergeSolanaReceipts({}, { mintSignature }),
       log: [`${new Date().toISOString()} NFTee minted to ${artifact.ownerPublicKey}: ${nftMint}`, ...s.log]
     }));
 
