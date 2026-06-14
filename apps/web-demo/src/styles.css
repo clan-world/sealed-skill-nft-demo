@@ -9,8 +9,9 @@
 body { margin: 0; background: radial-gradient(circle at top left, #1b2550, #070a12 45%); }
 main { max-width: 1440px; margin: 0 auto; padding: 28px; }
 .hero { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 24px; }
-.hero h1 { font-size: 44px; margin: 0; letter-spacing: -0.04em; }
+.hero h1 { font-size: 44px; margin: 0; letter-spacing: 0; }
 .hero p { max-width: 760px; color: #b9c1d9; line-height: 1.5; }
+.dynamic-wallet-shell { flex: 0 0 auto; min-width: 180px; display: flex; justify-content: flex-end; }
 .eyebrow { color: #7dd3fc !important; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; font-weight: 800; }
 .page-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
 .page-tabs button { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); box-shadow: none; }

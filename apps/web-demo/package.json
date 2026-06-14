@@ -10,19 +10,17 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@dynamic-labs/sdk-react-core": "^4.88.6",
+    "@dynamic-labs/solana": "^4.88.6",
     "@sealed-skill/protocol": "workspace:*",
-    "@solana/wallet-adapter-base": "^0.9.27",
-    "@solana/wallet-adapter-react": "^0.15.39",
-    "@solana/wallet-adapter-react-ui": "^0.9.39",
     "@solana/web3.js": "^1.98.4",
-    "tweetnacl": "^1.0.3",
-    "vite": "^7.1.5",
     "@vitejs/plugin-react": "^5.0.2",
+    "bs58": "^6.0.0",
+    "fastestsmallesttextencoderdecoder": "^1.0.22",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "bs58": "^6.0.0",
-    "@solana/wallet-adapter-phantom": "^0.9.29",
-    "@solana/wallet-adapter-solflare": "^0.6.33"
+    "tweetnacl": "^1.0.3",
+    "vite": "^7.1.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.24",

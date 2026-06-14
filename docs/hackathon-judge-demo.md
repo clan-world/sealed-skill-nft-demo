@@ -13,6 +13,7 @@ This demo shows encrypted agent data blocks with public decentralized storage an
 ```bash
 SOLANA_ENABLED=true \
 STORAGE_BACKEND=walrus \
+VITE_DYNAMIC_ENVIRONMENT_ID=your_dynamic_environment_id \
 WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space \
 WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space \
 WALRUS_EPOCHS=1 \

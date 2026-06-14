@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { DynamicWidget, useDynamicContext } from '@dynamic-labs/sdk-react-core';
+import { isSolanaWallet } from '@dynamic-labs/solana';
 import { PublicKey, Transaction } from '@solana/web3.js';
+import { Connection } from '@solana/web3.js';
 import { canonicalJson, makeNonce, shortHash, type DemoState } from '@sealed-skill/protocol';
 import { api } from './api.js';
 import { InfoCard, StatusPill, TeePanel } from './components.js';
@@ -9,6 +10,9 @@ import { brokerStepLabels, creatorStepLabels, makeSteps, runtimeStepLabels, useT
 
 type Busy = 'none' | 'reset' | 'register' | 'generate' | 'mint' | 'runtime' | 'prepare' | 'ownership' | 'transfer' | 'open-transfer';
 type DemoPage = 'broker-gated' | 'open-transfer' | 'judge-demo';
+type SolanaTransactionSigner = {
+  signTransaction(transaction: Transaction): Promise<Transaction>;
+};
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,8 +70,11 @@ function assertPublicKey(value: string, label: string) {
 }
 
 export function App() {
-  const wallet = useWallet();
-  const { connection } = useConnection();
+  const { primaryWallet, sdkHasLoaded } = useDynamicContext();
+  const connection = useMemo(
+    () => new Connection(import.meta.env.VITE_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com', 'confirmed'),
+    []
+  );
   const [state, setState] = useState<DemoState>({ tees: {}, log: [] });
   const [busy, setBusy] = useState<Busy>('none');
   const [error, setError] = useState<string>('');
@@ -87,7 +94,7 @@ export function App() {
   } | null>(null);
   const [recipientPublicKey, setRecipientPublicKey] = useState('');
 
-  const connectedPubkey = wallet.publicKey?.toBase58();
+  const connectedPubkey = primaryWallet && isSolanaWallet(primaryWallet) ? primaryWallet.address : undefined;
   const recipient = recipientPublicKey.trim();
   const preparedRecipient = state.pendingTransferTo ?? recipient;
 
@@ -151,11 +158,19 @@ export function App() {
   }
 
   async function signWithConnectedWallet(message: unknown): Promise<string> {
-    if (!connectedPubkey) throw new Error('Connect a wallet first.');
-    if (!wallet.signMessage) throw new Error('Connected wallet does not support message signing.');
+    if (!primaryWallet || !isSolanaWallet(primaryWallet) || !connectedPubkey) throw new Error('Connect a Solana wallet first.');
+    const signer = await primaryWallet.getSigner();
+    if (!signer.signMessage) throw new Error('Connected Solana wallet does not support message signing.');
     const bytes = new TextEncoder().encode(canonicalJson(message));
-    const sig = await wallet.signMessage(bytes);
-    return bytesToBase64(sig);
+    const signed = await signer.signMessage(bytes, 'utf8');
+    return bytesToBase64(signed.signature);
+  }
+
+  async function signTransactionWithConnectedWallet(tx: Transaction): Promise<Transaction> {
+    if (!primaryWallet || !isSolanaWallet(primaryWallet) || !connectedPubkey) throw new Error('Connect a Solana wallet first.');
+    const signer = await primaryWallet.getSigner();
+    if (!signer.signTransaction) throw new Error('Connected Solana wallet does not support transaction signing.');
+    return (signer as unknown as SolanaTransactionSigner).signTransaction(tx);
   }
 
   async function generateArtifact() {
@@ -264,7 +279,7 @@ export function App() {
 
   async function completeTransfer() {
     await runAction('transfer', async () => {
-      if (!connectedPubkey || !wallet.publicKey) throw new Error('Connect the current NFTee owner first.');
+      if (!connectedPubkey) throw new Error('Connect the current NFTee owner first.');
       const toPublicKey = assertPublicKey(preparedRecipient, 'Prepared recipient');
       const artifact = state.artifact;
       if (!artifact?.nftMint) throw new Error('Generate artifact first.');
@@ -277,8 +292,7 @@ export function App() {
       }
       const built = await api<{ txBase64: string }>('/api/transfer/build', { fromPublicKey: connectedPubkey, toPublicKey });
       const tx = Transaction.from(base64ToBytes(built.txBase64));
-      if (!wallet.signTransaction) throw new Error('Connected wallet does not support transaction signing.');
-      const signed = await wallet.signTransaction(tx);
+      const signed = await signTransactionWithConnectedWallet(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
       const confirmation = await connection.confirmTransaction(sig, 'confirmed');
       if (confirmation.value.err) {
@@ -293,7 +307,7 @@ export function App() {
 
   async function completeOpenTransfer() {
     await runAction('open-transfer', async () => {
-      if (!connectedPubkey || !wallet.publicKey) throw new Error('Connect the current NFTee owner first.');
+      if (!connectedPubkey) throw new Error('Connect the current NFTee owner first.');
       const toPublicKey = assertPublicKey(recipient, 'Recipient wallet');
       if (toPublicKey === connectedPubkey) throw new Error('Recipient must be a different wallet from the connected owner.');
       const artifact = state.artifact;
@@ -317,8 +331,7 @@ export function App() {
       }
       const built = await api<{ txBase64: string }>('/api/transfer/open/build', { fromPublicKey: connectedPubkey, toPublicKey });
       const tx = Transaction.from(base64ToBytes(built.txBase64));
-      if (!wallet.signTransaction) throw new Error('Connected wallet does not support transaction signing.');
-      const signed = await wallet.signTransaction(tx);
+      const signed = await signTransactionWithConnectedWallet(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
       const confirmation = await connection.confirmTransaction(sig, 'confirmed');
       if (confirmation.value.err) {
@@ -416,7 +429,9 @@ export function App() {
             ? 'This page shows the smoother model: the NFTee transfers like a normal token, then TEE1 checks current ownership only when TEE3 needs to use the sealed data.'
             : 'The NFTee controls a hidden animal artifact. Owners can use it through the runtime, but cannot read or copy the plaintext.'}</p>
         </div>
-        <WalletMultiButton />
+        <div className="dynamic-wallet-shell">
+          {sdkHasLoaded ? <DynamicWidget /> : <button disabled>Loading wallet...</button>}
+        </div>
       </header>
 
       <nav className="page-tabs" aria-label="Demo pages">
