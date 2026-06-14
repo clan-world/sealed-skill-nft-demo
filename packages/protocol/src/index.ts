@@ -3,6 +3,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 export type TeeRole = 'broker' | 'creator' | 'runtime';
 export type AttestationMode = 'mock' | 'automata-dcap' | 'zk-compressed-dcap';
+export type TransferPolicy = 'broker-gated' | 'open';
 
 export interface TeeRecord {
   role: TeeRole;
@@ -35,6 +36,21 @@ export interface EncryptedBlobRef {
   ivB64: string;
   tagB64: string;
   aadHash: string;
+  storage?: BlobStorageReceipt;
+}
+
+export interface BlobStorageReceipt {
+  provider: 'file' | 'walrus';
+  status?: string;
+  blobId?: string;
+  readUrl?: string;
+  suiRefType?: 'Associated Sui Object' | 'Previous Sui Certified Event';
+  suiRef?: string;
+  suiUrl?: string;
+  endEpoch?: number;
+  epochs?: number;
+  publisherUrl?: string;
+  aggregatorUrl?: string;
 }
 
 export interface RuntimePolicy {
@@ -58,6 +74,8 @@ export interface ArtifactRecord {
   hookProgramId?: string;
   artifactPda?: string;
   approvalPda?: string;
+  transferPolicyPda?: string;
+  transferPolicy: TransferPolicy;
   encryptedBlob: EncryptedBlobRef;
   sealedKeyForBroker: WrappedSecret;
   runtimePolicy: RuntimePolicy;
@@ -143,6 +161,11 @@ export interface DemoState {
   lastRuntimeResult?: {
     output: string;
     transcript: SignedEnvelope<RuntimeTranscript>;
+  };
+  solanaReceipts?: {
+    mintSignature?: string;
+    transferSignature?: string;
+    approvalSignature?: string;
   };
   log: string[];
 }

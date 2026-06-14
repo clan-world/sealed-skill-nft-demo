@@ -1,6 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{account_info::next_account_info, program_error::ProgramError};
-use spl_token_2022::{extension::StateWithExtensions, state::Account as TokenAccount};
+use spl_token_2022::{
+    extension::{transfer_hook::TransferHookAccount, BaseStateWithExtensions, StateWithExtensions},
+    state::Account as TokenAccount,
+};
 
 const TRANSFER_HOOK_EXECUTE_DISCRIMINATOR: [u8; 8] = [105, 37, 101, 197, 75, 251, 102, 26];
 
@@ -119,9 +122,19 @@ pub mod sealed_skill {
     }
 
     pub fn initialize_extra_account_metas(ctx: Context<InitializeExtraAccountMetas>, data: Vec<u8>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.config.admin, ctx.accounts.admin.key(), SealedSkillError::NotAdmin);
         let target = &mut ctx.accounts.extra_account_metas.try_borrow_mut_data()?;
         require!(target.len() == data.len(), SealedSkillError::WrongExtraAccountMetasSize);
         target.copy_from_slice(&data);
+        Ok(())
+    }
+
+    pub fn initialize_transfer_policy(ctx: Context<InitializeTransferPolicy>, mode: u8) -> Result<()> {
+        require_keys_eq!(ctx.accounts.config.admin, ctx.accounts.admin.key(), SealedSkillError::NotAdmin);
+        let policy = &mut ctx.accounts.transfer_policy;
+        policy.nft_mint = ctx.accounts.nft_mint.key();
+        policy.mode = TransferMode::try_from(mode)?;
+        policy.bump = ctx.bumps.transfer_policy;
         Ok(())
     }
 
@@ -227,11 +240,26 @@ pub struct BeginBrokerTransfer<'info> {
 pub struct InitializeExtraAccountMetas<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, ProtocolConfig>,
     /// CHECK: Used only as PDA seed for the Transfer Hook validation account.
     pub nft_mint: UncheckedAccount<'info>,
     /// CHECK: Raw TLV account consumed by Token-2022 transfer hook resolution.
     #[account(init_if_needed, payer = admin, space = data.len(), seeds = [b"extra-account-metas", nft_mint.key().as_ref()], bump)]
     pub extra_account_metas: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeTransferPolicy<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, ProtocolConfig>,
+    /// CHECK: Stored in the policy and compared in the transfer hook.
+    pub nft_mint: UncheckedAccount<'info>,
+    #[account(init_if_needed, payer = admin, space = 8 + TransferPolicyAccount::SIZE, seeds = [b"transfer-policy", nft_mint.key().as_ref()], bump)]
+    pub transfer_policy: Account<'info, TransferPolicyAccount>,
     pub system_program: Program<'info, System>,
 }
 
@@ -288,6 +316,29 @@ pub struct TransferApproval {
 }
 impl TransferApproval { pub const SIZE: usize = 32 + 32 + 32 + 32 + 8 + 8 + 32 + 8 + 1 + 1; }
 
+#[account]
+pub struct TransferPolicyAccount {
+    pub nft_mint: Pubkey,
+    pub mode: TransferMode,
+    pub bump: u8,
+}
+impl TransferPolicyAccount { pub const SIZE: usize = 32 + 1 + 1; }
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum TransferMode { BrokerGated, Open }
+
+impl TryFrom<u8> for TransferMode {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self> {
+        match value {
+            0 => Ok(TransferMode::BrokerGated),
+            1 => Ok(TransferMode::Open),
+            _ => err!(SealedSkillError::InvalidTransferPolicy),
+        }
+    }
+}
+
 #[error_code]
 pub enum SealedSkillError {
     #[msg("Only protocol admin can do this in the MVP scaffold")]
@@ -314,6 +365,12 @@ pub enum SealedSkillError {
     InvalidTransferAmount,
     #[msg("Wrong extra account metas account size")]
     WrongExtraAccountMetasSize,
+    #[msg("Invalid transfer policy")]
+    InvalidTransferPolicy,
+    #[msg("Invalid transfer hook account")]
+    InvalidHookAccount,
+    #[msg("Transfer hook must be invoked by Token-2022 during a transfer")]
+    InvalidTransferContext,
     #[msg("Overflow")]
     Overflow,
 }
@@ -340,19 +397,90 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
     let mint_info = next_account_info(account_iter)?;
     let destination_info = next_account_info(account_iter)?;
     let authority_info = next_account_info(account_iter)?;
-    let _validation_info = next_account_info(account_iter)?;
+    let validation_info = next_account_info(account_iter)?;
     let artifact_info = next_account_info(account_iter)?;
-    let approval_info = next_account_info(account_iter)?;
+    let policy_or_approval_info = next_account_info(account_iter)?;
+
+    let expected_validation = Pubkey::find_program_address(&[b"extra-account-metas", mint_info.key.as_ref()], &crate::ID).0;
+    let expected_artifact = Pubkey::find_program_address(&[b"artifact", mint_info.key.as_ref()], &crate::ID).0;
+    let expected_policy = Pubkey::find_program_address(&[b"transfer-policy", mint_info.key.as_ref()], &crate::ID).0;
+    let expected_approval = Pubkey::find_program_address(&[b"approval", mint_info.key.as_ref()], &crate::ID).0;
+
+    if *validation_info.key != expected_validation || *artifact_info.key != expected_artifact {
+        return Err(error!(SealedSkillError::InvalidHookAccount).into());
+    }
+    if *policy_or_approval_info.key != expected_policy && *policy_or_approval_info.key != expected_approval {
+        return Err(error!(SealedSkillError::InvalidHookAccount).into());
+    }
+    let token_2022_program = spl_token_2022::id();
+    if *source_info.owner != token_2022_program || *destination_info.owner != token_2022_program || *mint_info.owner != token_2022_program {
+        return Err(error!(SealedSkillError::InvalidTransferContext).into());
+    }
 
     let source_data = source_info.try_borrow_data()?;
     let destination_data = destination_info.try_borrow_data()?;
-    let source = StateWithExtensions::<TokenAccount>::unpack(&source_data)?.base;
-    let destination = StateWithExtensions::<TokenAccount>::unpack(&destination_data)?.base;
+    let source_state = StateWithExtensions::<TokenAccount>::unpack(&source_data)?;
+    let destination_state = StateWithExtensions::<TokenAccount>::unpack(&destination_data)?;
+    let source_hook = source_state
+        .get_extension::<TransferHookAccount>()
+        .map_err(|_| error!(SealedSkillError::InvalidTransferContext))?;
+    let destination_hook = destination_state
+        .get_extension::<TransferHookAccount>()
+        .map_err(|_| error!(SealedSkillError::InvalidTransferContext))?;
+    if !bool::from(source_hook.transferring) || !bool::from(destination_hook.transferring) {
+        return Err(error!(SealedSkillError::InvalidTransferContext).into());
+    }
+    let source = source_state.base;
+    let destination = destination_state.base;
+
+    if source.mint != *mint_info.key || destination.mint != *mint_info.key {
+        return Err(error!(SealedSkillError::WrongMint).into());
+    }
 
     let mut artifact = {
         let data = artifact_info.try_borrow_data()?;
         let mut slice: &[u8] = &data;
         ArtifactAccount::try_deserialize(&mut slice).map_err(|_| ProgramError::InvalidAccountData)?
+    };
+
+    if artifact.nft_mint != *mint_info.key {
+        return Err(error!(SealedSkillError::WrongMint).into());
+    }
+
+    let policy = if *policy_or_approval_info.key == expected_policy {
+        let data = policy_or_approval_info.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        Some(TransferPolicyAccount::try_deserialize(&mut slice).map_err(|_| ProgramError::InvalidAccountData)?)
+    } else {
+        None
+    };
+    let has_policy_account = policy.is_some();
+
+    if let Some(policy) = policy {
+        if policy.nft_mint != *mint_info.key {
+            return Err(error!(SealedSkillError::WrongMint).into());
+        }
+        if policy.mode == TransferMode::Open {
+            if source.owner != artifact.owner || source.owner != *authority_info.key {
+                return Err(error!(SealedSkillError::WrongCurrentOwner).into());
+            }
+            artifact.owner = destination.owner;
+            artifact.epoch = artifact.epoch.checked_add(1).ok_or(error!(SealedSkillError::Overflow))?;
+            let mut data = artifact_info.try_borrow_mut_data()?;
+            let mut writer = &mut data[..];
+            artifact.try_serialize(&mut writer)?;
+            return Ok(());
+        }
+    }
+
+    let approval_info = if has_policy_account {
+        let approval_info = next_account_info(account_iter)?;
+        if *approval_info.key != expected_approval {
+            return Err(error!(SealedSkillError::InvalidHookAccount).into());
+        }
+        approval_info
+    } else {
+        policy_or_approval_info
     };
     let mut approval = {
         let data = approval_info.try_borrow_data()?;
@@ -360,7 +488,7 @@ fn execute_transfer_hook(accounts: &[AccountInfo], amount: u64) -> std::result::
         TransferApproval::try_deserialize(&mut slice).map_err(|_| ProgramError::InvalidAccountData)?
     };
 
-    if artifact.nft_mint != *mint_info.key || approval.nft_mint != *mint_info.key {
+    if approval.nft_mint != *mint_info.key {
         return Err(error!(SealedSkillError::WrongMint).into());
     }
     if approval.artifact != *artifact_info.key {

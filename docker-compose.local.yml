@@ -3,22 +3,25 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.dev
-    command: pnpm --filter @sealed-skill/tee-broker dev
+    command: sh -c 'TEE_BROKER_HOST=$$(hostname -i) pnpm --filter @sealed-skill/tee-broker dev'
     environment:
       DEMO_DATA_DIR: /app/data
       TEE_BROKER_PORT: 4101
-    ports: ["4101:4101"]
     volumes: ["demo-data:/app/data"]
 
   tee-creator:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.dev
-    command: pnpm --filter @sealed-skill/tee-creator dev
+    command: sh -c 'TEE_CREATOR_HOST=$$(hostname -i) pnpm --filter @sealed-skill/tee-creator dev'
     environment:
       DEMO_DATA_DIR: /app/data
       TEE_CREATOR_PORT: 4102
-    ports: ["4102:4102"]
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-file}
+      WALRUS_PUBLISHER_URL: ${WALRUS_PUBLISHER_URL:-https://publisher.walrus-testnet.walrus.space}
+      WALRUS_AGGREGATOR_URL: ${WALRUS_AGGREGATOR_URL:-https://aggregator.walrus-testnet.walrus.space}
+      WALRUS_EPOCHS: ${WALRUS_EPOCHS:-1}
+      WALRUS_SUI_NETWORK: ${WALRUS_SUI_NETWORK:-testnet}
     volumes: ["demo-data:/app/data"]
     depends_on: [tee-broker]
 
@@ -26,12 +29,16 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.dev
-    command: pnpm --filter @sealed-skill/tee-runtime dev
+    command: sh -c 'TEE_RUNTIME_HOST=$$(hostname -i) pnpm --filter @sealed-skill/tee-runtime dev'
     environment:
       DEMO_DATA_DIR: /app/data
       TEE_RUNTIME_PORT: 4103
       TEE_BROKER_URL: http://tee-broker:4101
-    ports: ["4103:4103"]
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-file}
+      WALRUS_PUBLISHER_URL: ${WALRUS_PUBLISHER_URL:-https://publisher.walrus-testnet.walrus.space}
+      WALRUS_AGGREGATOR_URL: ${WALRUS_AGGREGATOR_URL:-https://aggregator.walrus-testnet.walrus.space}
+      WALRUS_EPOCHS: ${WALRUS_EPOCHS:-1}
+      WALRUS_SUI_NETWORK: ${WALRUS_SUI_NETWORK:-testnet}
     volumes: ["demo-data:/app/data"]
     depends_on: [tee-broker]
 
@@ -39,7 +46,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.dev
-    command: pnpm --filter @sealed-skill/api dev
+    command: sh -c 'API_HOST=$$(hostname -i) pnpm --filter @sealed-skill/api dev'
     environment:
       DEMO_DATA_DIR: /app/data
       API_PORT: 8787
@@ -49,7 +56,12 @@ services:
       TEE_BROKER_URL: http://tee-broker:4101
       TEE_CREATOR_URL: http://tee-creator:4102
       TEE_RUNTIME_URL: http://tee-runtime:4103
-    ports: ["8787:8787"]
+      API_CORS_ORIGIN: ${API_CORS_ORIGIN:-}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-file}
+      WALRUS_PUBLISHER_URL: ${WALRUS_PUBLISHER_URL:-https://publisher.walrus-testnet.walrus.space}
+      WALRUS_AGGREGATOR_URL: ${WALRUS_AGGREGATOR_URL:-https://aggregator.walrus-testnet.walrus.space}
+      WALRUS_SUI_NETWORK: ${WALRUS_SUI_NETWORK:-testnet}
+    ports: ["${DEMO_API_HOST_BIND:-127.0.0.1}:8787:8787"]
     volumes: ["demo-data:/app/data"]
     depends_on: [tee-broker, tee-creator, tee-runtime]
 
@@ -57,11 +69,14 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.dev
-    command: pnpm --filter @sealed-skill/web-demo dev
+    command: sh -c 'VITE_DEV_HOST=$$(hostname -i) pnpm --filter @sealed-skill/web-demo dev'
     environment:
-      VITE_API_BASE_URL: http://localhost:8787
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8787}
       VITE_SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
-    ports: ["5173:5173"]
+      VITE_SOLANA_CLUSTER: ${SOLANA_CLUSTER:-devnet}
+      VITE_DYNAMIC_ENVIRONMENT_ID: ${VITE_DYNAMIC_ENVIRONMENT_ID:-}
+      VITE_DEV_ALLOWED_HOSTS: ${VITE_DEV_ALLOWED_HOSTS:-}
+    ports: ["${DEMO_WEB_HOST_BIND:-127.0.0.1}:5173:5173"]
     depends_on: [api]
 
 volumes:

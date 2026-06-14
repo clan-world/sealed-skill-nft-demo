@@ -61,6 +61,8 @@ export async function requestDevnetAirdrop(connection: Connection, keypair: Keyp
   return sig;
 }
 
+export type DemoTransferPolicy = 'broker-gated' | 'open';
+
 export interface Token2022CollectibleMintInput {
   connection: Connection;
   payer: Keypair;
@@ -68,6 +70,7 @@ export interface Token2022CollectibleMintInput {
   collectionStatePath: string;
   metadataBaseUrl: string;
   hookProgramId?: PublicKey;
+  transferPolicy?: DemoTransferPolicy;
   artifactId: string;
   encryptedBlobHash: string;
   runtimePolicyHash: string;
@@ -82,6 +85,7 @@ export interface Token2022CollectibleMintResult {
   hookProgramId: PublicKey;
   artifactPda: PublicKey;
   approvalPda: PublicKey;
+  transferPolicyPda: PublicKey;
 }
 
 export function getSealedSkillProgramId(value?: string): PublicKey {
@@ -94,6 +98,10 @@ export function deriveArtifactPda(mint: PublicKey, programId = SEALED_SKILL_PROG
 
 export function deriveApprovalPda(mint: PublicKey, programId = SEALED_SKILL_PROGRAM_ID): PublicKey {
   return PublicKey.findProgramAddressSync([Buffer.from('approval'), mint.toBuffer()], programId)[0];
+}
+
+export function deriveTransferPolicyPda(mint: PublicKey, programId = SEALED_SKILL_PROGRAM_ID): PublicKey {
+  return PublicKey.findProgramAddressSync([Buffer.from('transfer-policy'), mint.toBuffer()], programId)[0];
 }
 
 export function deriveConfigPda(programId = SEALED_SKILL_PROGRAM_ID): PublicKey {
@@ -121,6 +129,8 @@ export async function mintOneSupplyToken2022Collectible(input: Token2022Collecti
   const metadataUri = makeMetadataUri(input.metadataBaseUrl, mint.publicKey);
   const artifactPda = deriveArtifactPda(mint.publicKey, hookProgramId);
   const approvalPda = deriveApprovalPda(mint.publicKey, hookProgramId);
+  const transferPolicyPda = deriveTransferPolicyPda(mint.publicKey, hookProgramId);
+  const transferPolicy = input.transferPolicy === 'open' ? 'open' : 'broker-gated';
   const mintLen = getMintLen(
     [ExtensionType.MetadataPointer, ExtensionType.GroupMemberPointer, ExtensionType.TransferHook]
   );
@@ -179,13 +189,21 @@ export async function mintOneSupplyToken2022Collectible(input: Token2022Collecti
     runtimePolicyHash: bytes32(input.runtimePolicyHash),
     owner
   }));
+  registerTx.add(createInitializeTransferPolicyInstruction({
+    programId: hookProgramId,
+    admin: payer.publicKey,
+    mint: mint.publicKey,
+    transferPolicy: transferPolicyPda,
+    mode: transferPolicy === 'open' ? 1 : 0
+  }));
   registerTx.add(createInitializeExtraAccountMetasInstruction({
     programId: hookProgramId,
     admin: payer.publicKey,
     mint: mint.publicKey,
     extraAccountMetas: deriveExtraAccountMetasPda(mint.publicKey, hookProgramId),
     artifact: artifactPda,
-    approval: approvalPda
+    transferPolicy: transferPolicyPda,
+    ...(transferPolicy === 'broker-gated' ? { approval: approvalPda } : {})
   }));
   registerTx.add(createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, ata, owner, mint.publicKey, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
   registerTx.add(createMintToInstruction(mint.publicKey, ata, payer.publicKey, 1, [], TOKEN_2022_PROGRAM_ID));
@@ -199,7 +217,8 @@ export async function mintOneSupplyToken2022Collectible(input: Token2022Collecti
     tokenProgram: TOKEN_2022_PROGRAM_ID,
     hookProgramId,
     artifactPda,
-    approvalPda
+    approvalPda,
+    transferPolicyPda
   };
 }
 
@@ -236,6 +255,7 @@ export async function buildToken2022BrokerTransferTx(input: {
   const toAta = await getAssociatedTokenAddress(mint, toOwner, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
   const artifactPda = deriveArtifactPda(mint, hookProgramId);
   const approvalPda = deriveApprovalPda(mint, hookProgramId);
+  const transferPolicyPda = deriveTransferPolicyPda(mint, hookProgramId);
   const extraAccountMetasPda = deriveExtraAccountMetasPda(mint, hookProgramId);
   const tx = new Transaction();
   tx.add(createBeginBrokerTransferInstruction({ programId: hookProgramId, owner: fromOwner, mint, artifact: artifactPda, approval: approvalPda }));
@@ -244,7 +264,38 @@ export async function buildToken2022BrokerTransferTx(input: {
   transferIx.keys.push(
     { pubkey: extraAccountMetasPda, isSigner: false, isWritable: false },
     { pubkey: artifactPda, isSigner: false, isWritable: true },
+    { pubkey: transferPolicyPda, isSigner: false, isWritable: false },
     { pubkey: approvalPda, isSigner: false, isWritable: true },
+    { pubkey: hookProgramId, isSigner: false, isWritable: false }
+  );
+  tx.add(transferIx);
+  tx.feePayer = fromOwner;
+  tx.recentBlockhash = (await connection.getLatestBlockhash('confirmed')).blockhash;
+  return tx;
+}
+
+
+export async function buildOpenDemoNftTransferTx(input: {
+  connection: Connection;
+  mint: PublicKey;
+  fromOwner: PublicKey;
+  toOwner: PublicKey;
+  hookProgramId?: PublicKey;
+}): Promise<Transaction> {
+  const { connection, mint, fromOwner, toOwner } = input;
+  const hookProgramId = input.hookProgramId ?? SEALED_SKILL_PROGRAM_ID;
+  const fromAta = await getAssociatedTokenAddress(mint, fromOwner, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+  const toAta = await getAssociatedTokenAddress(mint, toOwner, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+  const artifactPda = deriveArtifactPda(mint, hookProgramId);
+  const transferPolicyPda = deriveTransferPolicyPda(mint, hookProgramId);
+  const extraAccountMetasPda = deriveExtraAccountMetasPda(mint, hookProgramId);
+  const tx = new Transaction();
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(fromOwner, toAta, toOwner, mint, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
+  const transferIx = createTransferCheckedInstruction(fromAta, mint, toAta, fromOwner, 1, 0, [], TOKEN_2022_PROGRAM_ID);
+  transferIx.keys.push(
+    { pubkey: extraAccountMetasPda, isSigner: false, isWritable: false },
+    { pubkey: artifactPda, isSigner: false, isWritable: true },
+    { pubkey: transferPolicyPda, isSigner: false, isWritable: false },
     { pubkey: hookProgramId, isSigner: false, isWritable: false }
   );
   tx.add(transferIx);
@@ -403,6 +454,26 @@ function createRegisterArtifactInstruction(input: {
   });
 }
 
+function createInitializeTransferPolicyInstruction(input: {
+  programId: PublicKey;
+  admin: PublicKey;
+  mint: PublicKey;
+  transferPolicy: PublicKey;
+  mode: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: input.programId,
+    keys: [
+      { pubkey: input.admin, isSigner: true, isWritable: true },
+      { pubkey: deriveConfigPda(input.programId), isSigner: false, isWritable: false },
+      { pubkey: input.mint, isSigner: false, isWritable: false },
+      { pubkey: input.transferPolicy, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
+    ],
+    data: Buffer.concat([anchorDiscriminator('global:initialize_transfer_policy'), Buffer.from([input.mode])])
+  });
+}
+
 function createRecordTransferApprovalInstruction(input: {
   programId: PublicKey;
   admin: PublicKey;
@@ -460,15 +531,27 @@ function createInitializeExtraAccountMetasInstruction(input: {
   mint: PublicKey;
   extraAccountMetas: PublicKey;
   artifact: PublicKey;
-  approval: PublicKey;
+  transferPolicy: PublicKey;
+  approval?: PublicKey;
 }): TransactionInstruction {
-  const data = encodeExtraAccountMetas([input.artifact, input.approval]);
+  const metas = input.approval
+    ? [
+      { pubkey: input.artifact, isWritable: true },
+      { pubkey: input.transferPolicy, isWritable: false },
+      { pubkey: input.approval, isWritable: true }
+    ]
+    : [
+      { pubkey: input.artifact, isWritable: true },
+      { pubkey: input.transferPolicy, isWritable: false }
+    ];
+  const data = encodeExtraAccountMetas(metas);
   const len = Buffer.alloc(4);
   len.writeUInt32LE(data.length);
   return new TransactionInstruction({
     programId: input.programId,
     keys: [
       { pubkey: input.admin, isSigner: true, isWritable: true },
+      { pubkey: deriveConfigPda(input.programId), isSigner: false, isWritable: false },
       { pubkey: input.mint, isSigner: false, isWritable: false },
       { pubkey: input.extraAccountMetas, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
@@ -481,7 +564,7 @@ function createInitializeExtraAccountMetasInstruction(input: {
   });
 }
 
-function encodeExtraAccountMetas(accounts: PublicKey[]): Buffer {
+function encodeExtraAccountMetas(accounts: Array<{ pubkey: PublicKey; isWritable: boolean }>): Buffer {
   const accountData = {
     instructionDiscriminator: 1902484195463472489n,
     length: 4 + accounts.length * 35,
@@ -489,9 +572,9 @@ function encodeExtraAccountMetas(accounts: PublicKey[]): Buffer {
       count: accounts.length,
       extraAccounts: accounts.map((account) => ({
         discriminator: 0,
-        addressConfig: account.toBuffer(),
+        addressConfig: account.pubkey.toBuffer(),
         isSigner: false,
-        isWritable: true
+        isWritable: account.isWritable
       }))
     }
   };

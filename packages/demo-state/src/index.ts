@@ -6,12 +6,13 @@ export type DemoPhase =
   | 'artifact-created'
   | 'b-failed-before-transfer'
   | 'transfer-prepared'
+  | 'open-transfer-complete'
   | 'transfer-complete'
   | 'b-succeeded-after-transfer';
 
 export function getDemoPhase(state: DemoState): DemoPhase {
   if (state.lastRuntimeResult) return 'b-succeeded-after-transfer';
-  if (state.artifact?.status === 'transferred') return 'transfer-complete';
+  if (state.artifact?.status === 'transferred') return state.artifact.transferPolicy === 'open' ? 'open-transfer-complete' : 'transfer-complete';
   if (state.transferTranscript) return 'transfer-prepared';
   if (state.artifact) return 'artifact-created';
   if (state.tees.broker && state.tees.creator && state.tees.runtime) return 'tees-registered';
