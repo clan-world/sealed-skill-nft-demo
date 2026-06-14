@@ -1,24 +1,42 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
-import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
-import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
-import '@solana/wallet-adapter-react-ui/styles.css';
+import { DynamicContextProvider } from '@dynamic-labs/sdk-react-core';
+import { SolanaWalletConnectors } from '@dynamic-labs/solana';
 import { App } from './App.js';
 import './styles.css';
 
-const endpoint = import.meta.env.VITE_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
-const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
+const dynamicEnvironmentId = import.meta.env.VITE_DYNAMIC_ENVIRONMENT_ID;
+
+function MissingDynamicConfig() {
+  return (
+    <main>
+      <header className="hero">
+        <div>
+          <p className="eyebrow">Dynamic wallet setup</p>
+          <h1>Dynamic environment required</h1>
+          <p>Set VITE_DYNAMIC_ENVIRONMENT_ID and enable Solana in the Dynamic dashboard to run the wallet-connected demo.</p>
+        </div>
+      </header>
+    </main>
+  );
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>
-          <App />
-        </WalletModalProvider>
-      </WalletProvider>
-    </ConnectionProvider>
+    {dynamicEnvironmentId ? (
+      <DynamicContextProvider
+        settings={{
+          environmentId: dynamicEnvironmentId,
+          walletConnectors: [SolanaWalletConnectors],
+          initialAuthenticationMode: 'connect-only',
+          appName: 'NFTee Demo',
+          networkValidationMode: 'never'
+        }}
+      >
+        <App />
+      </DynamicContextProvider>
+    ) : (
+      <MissingDynamicConfig />
+    )}
   </React.StrictMode>
 );
