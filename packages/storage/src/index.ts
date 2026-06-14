@@ -67,7 +67,7 @@ export class WalrusBlobStore implements BlobStore {
   constructor(options: WalrusBlobStoreOptions) {
     this.publisherUrl = stripSlash(options.publisherUrl);
     this.aggregatorUrl = stripSlash(options.aggregatorUrl);
-    this.epochs = options.epochs ?? 1;
+    this.epochs = normalizeWalrusEpochs(options.epochs);
     this.suiNetwork = options.suiNetwork ?? 'testnet';
   }
 
@@ -117,10 +117,11 @@ export class WalrusBlobStore implements BlobStore {
 
 export function createBlobStoreFromEnv(rootDir: string, env: NodeJS.ProcessEnv = process.env): BlobStore {
   if ((env.STORAGE_BACKEND ?? 'file').toLowerCase() === 'walrus') {
+    const epochs = parseWalrusEpochs(env.WALRUS_EPOCHS);
     return new WalrusBlobStore({
       publisherUrl: env.WALRUS_PUBLISHER_URL ?? 'https://publisher.walrus-testnet.walrus.space',
       aggregatorUrl: env.WALRUS_AGGREGATOR_URL ?? 'https://aggregator.walrus-testnet.walrus.space',
-      epochs: Number(env.WALRUS_EPOCHS ?? 1),
+      ...(epochs === undefined ? {} : { epochs }),
       suiNetwork: env.WALRUS_SUI_NETWORK === 'mainnet' ? 'mainnet' : 'testnet'
     });
   }
@@ -196,7 +197,7 @@ function makeWalrusReceipt(input: {
   };
   if (input.blobId) {
     receipt.blobId = input.blobId;
-    receipt.readUrl = `${input.aggregatorUrl}/v1/blobs/${input.blobId}`;
+    receipt.readUrl = `${input.aggregatorUrl}/v1/blobs/${encodeURIComponent(input.blobId)}`;
   }
   if (input.suiRef) {
     receipt.suiRef = input.suiRef;
@@ -207,9 +208,25 @@ function makeWalrusReceipt(input: {
 }
 
 function blobIdFromUri(uri: string): string {
-  if (uri.startsWith('walrus://')) return uri.slice('walrus://'.length);
-  if (/^https?:\/\//.test(uri)) return uri.split('/').filter(Boolean).at(-1) ?? '';
-  throw new Error(`Unsupported URI: ${uri}`);
+  const blobId = uri.startsWith('walrus://')
+    ? uri.slice('walrus://'.length)
+    : /^https?:\/\//.test(uri)
+      ? uri.split('/').filter(Boolean).at(-1) ?? ''
+      : undefined;
+  if (blobId === undefined) throw new Error(`Unsupported URI: ${uri}`);
+  if (!blobId) throw new Error(`Walrus URI does not include a blob ID: ${uri}`);
+  return decodeURIComponent(blobId);
+}
+
+function parseWalrusEpochs(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  return normalizeWalrusEpochs(Number(value));
+}
+
+function normalizeWalrusEpochs(value: number | undefined): number {
+  if (value === undefined) return 1;
+  if (!Number.isInteger(value) || value < 1) throw new Error(`WALRUS_EPOCHS must be a positive integer, got ${value}`);
+  return value;
 }
 
 function stripSlash(value: string): string {

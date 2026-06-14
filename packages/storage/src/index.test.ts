@@ -39,6 +39,26 @@ describe('WalrusBlobStore', () => {
     });
   });
 
+  it('URL-encodes blob IDs in Walrus receipt read URLs', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      newlyCreated: {
+        blobObject: {
+          id: '0xblob_object',
+          blobId: 'blob/with reserved+chars',
+          storage: { endEpoch: 42 }
+        }
+      }
+    }), { status: 200 })) as typeof fetch;
+
+    const store = new WalrusBlobStore({
+      publisherUrl: 'https://publisher.example',
+      aggregatorUrl: 'https://aggregator.example'
+    });
+    const result = await store.put(Buffer.from('sealed'));
+
+    expect(result.storage?.readUrl).toBe('https://aggregator.example/v1/blobs/blob%2Fwith%20reserved%2Bchars');
+  });
+
   it('records already-certified Walrus event metadata', async () => {
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
       alreadyCertified: {
@@ -73,5 +93,23 @@ describe('WalrusBlobStore', () => {
     expect(buffer.toString('utf8')).toBe('ciphertext');
     expect(globalThis.fetch).toHaveBeenCalledWith('https://aggregator.example/v1/blobs/blob_read');
   });
-});
 
+  it('rejects Walrus reads with an empty blob ID', async () => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+    const store = new WalrusBlobStore({
+      publisherUrl: 'https://publisher.example',
+      aggregatorUrl: 'https://aggregator.example'
+    });
+
+    await expect(store.get('walrus://')).rejects.toThrow('does not include a blob ID');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid Walrus epoch counts', () => {
+    expect(() => new WalrusBlobStore({
+      publisherUrl: 'https://publisher.example',
+      aggregatorUrl: 'https://aggregator.example',
+      epochs: Number.NaN
+    })).toThrow('WALRUS_EPOCHS must be a positive integer');
+  });
+});
